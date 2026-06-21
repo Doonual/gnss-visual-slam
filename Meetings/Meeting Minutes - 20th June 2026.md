@@ -1,0 +1,63 @@
+---
+Date: 20th June 2026
+Time: 1:30 PM
+---
+
+Agenda
+- ROS2?
+- What hardware is it running on?
+- What Programming language
+- Outcomes
+	- Are we building a physical system
+	- Are we using an existing physical system
+	- Does it involve path planning
+	- Realtime, want histogram?
+- Laboratory equipment?
+- Manufacturing?
+- Technical assistance?
+- Equipment or consumable purchases?
+
+Minutes
+- 3d much more complicated
+- focussing on optimisation based approach not filter
+- quite mature at the moment
+- backbone of slam is mature, cannot improve
+- regular GNSS not RTK GNSS
+- using GNSS to improve mapping
+- mining you can use anchor points and rovers to get high accuracy
+- navigation meaning location estimation
+- GNSS for loop closure, don't need to compare camera angles
+- Data association, how 
+- Environment with good continuous contour, good gaussian splatting
+- Realtime gaussian splatting for mapping with sparce features
+- The map is the gaussian splat
+- Doing gaussian splat in real time with beefy GPUs
+- sampling of key frames, 60fps is too much, graph optimisation. Include algorithm to detect which frames are important
+- indoor, better to have a hierarchical
+- yes definitely machine learning
+- sampling approach used to throw out unneeded parts of the map
+- Building the physical system as well, get agent devices
+- Realtime means building the map in real time instead of monitoring moving stuff in the map
+- Budget for GNSS
+- Given a camera
+- Building on top of existing open source software
+- SLAM is area of interest for hui
+	- very big application
+	- quite popular
+	- application driven research
+- Purpose
+	- Build up tech to eventually submit to industry
+- His benefit
+	- deeper understanding
+	- Same for me
+- Dont worry about the form
+- Wait an announcement from CME
+- By end of semester, progress report
+- Weekly meetings
+- Return to perth mid way through july
+- Every year changes, talk to unit coordinator about the project nomination form.
+- Dont worry about that
+- Reading
+- visual slam
+- learn about visual slam
+- Can combine honours thesis wiht PDH thesis
