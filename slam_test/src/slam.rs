@@ -8,5 +8,5 @@ pub struct MapCamera;
 
 #[derive(Component)]
 #[require(Transform)]
-pub struct WorldTrackPoint(pub u32);
+pub struct WorldTrackPoint;
 

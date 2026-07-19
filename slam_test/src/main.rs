@@ -79,7 +79,7 @@ fn setup(
 			Camera3d::default(),
 			Camera {
 				order: -1,
-				clear_color: Color::WHITE.into(),
+				clear_color: Color::srgb_u8(100, 100, 255).into(),
 				..default()
 			},
 			RenderTarget::Image(slam_camera_texture_handle.clone().into()),
@@ -126,35 +126,35 @@ fn setup(
 			children![
 				(
 					Transform::from_xyz(-0.5, -0.5, -0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(-0.5, -0.5, 0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(-0.5, 0.5, -0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(-0.5, 0.5, 0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(0.5, -0.5, -0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(0.5, -0.5, 0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(0.5, 0.5, -0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				(
 					Transform::from_xyz(0.5, 0.5, 0.5),
-					slam::WorldTrackPoint(0),
+					slam::WorldTrackPoint,
 				),
 				
 			]
