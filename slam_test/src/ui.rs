@@ -1,106 +1,86 @@
 use bevy::prelude::*;
-use bevy::{color::palettes::basic::*,input_focus::{FocusCause, InputFocus},};
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::RenderLayers;
 
+use bevy_prng::WyRand;
+use bevy_rand::prelude::GlobalRng;
+use rand_core::Rng;
+
+//use bevy::render::view::RenderLayers;
+
 use crate::slam;
-
-#[derive(Component)]
-#[require(Node)]
-#[require(ImageNode)]
-struct SLAMCameraMonitor;
-
-#[derive(Component)]
-#[require(Node)]
-#[require(ImageNode)]
-struct MapCameraMonitor;
-
-#[derive(Component)]
-#[require(Node)]
-struct TrackPointUI;
-
-fn move_track_point_ui(
-	slam_camera_query: Query<(&Camera, &GlobalTransform), With<slam::SLAMCamera>>,
-	mut track_point_query: Query<&mut Node, With<TrackPointUI>>,
-	world_track_point_query: Query<&GlobalTransform, With<slam::WorldTrackPoint>>,
-) {
-	
-	let Ok((slam_camera, slam_camera_transform)) = slam_camera_query.single() else {return;};
-	
-	
-	for (mut track_point_crosshair_node, world_track_point_transform) in track_point_query.iter_mut().zip(world_track_point_query.iter()) {
-		
-		let Ok(viewport_pos) = slam_camera.world_to_viewport(slam_camera_transform, world_track_point_transform.translation()) else {continue; };
-		
-		let Some(viewport_size) = slam_camera.logical_viewport_size() else {continue;};
-		
-		let viewport_pos_percent = viewport_pos / viewport_size;
-		
-		track_point_crosshair_node.left = percent(viewport_pos_percent.x * 100.0);
-		track_point_crosshair_node.top = percent(viewport_pos_percent.y * 100.0);
-	}
-	
-	
-	
-}
-
-
-
-#[derive(Component)]
-struct SLAMCameraUI;
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum StartupSet {
-	LinkUI,
-}
 
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
-struct UIGizmos;
+struct MapCameraGizmoConfigGroup;
 
-pub struct UIPlugin;
-impl Plugin for UIPlugin {
-	fn build(&self, app: &mut App) {
-		
-		app.configure_sets(Startup, StartupSet::LinkUI.after(crate::StartupSet::SpawnScene));
-		
-		app.insert_gizmo_config(
-			UIGizmos,
-			GizmoConfig {
-				render_layers: RenderLayers::layer(2),
-				..default()
-			}
-		);
-		app.add_systems(Update, move_track_point_ui);
-		app.add_systems(Update, link_slam_camera_monitor);
-		app.add_systems(Update, link_map_camera_monitor);
-		app.add_systems(Update, populate_slam_preview_tree);
-		app.add_systems(Startup, spawn_ui);
-		//app.add_systems(Update, spawn_slam_preview_track_point_ui);
-		//app.add_systems(Update, spawn_slam_preview_track_point_ui_crosshair);
-		//app.add_systems(Startup, link_camera_previews.in_set(StartupSet::LinkUI));
-		app.add_systems(Update, draw_track_point_gizmos);
-		
-		
-	}
-}
 
+// This component monitors the SLAM Camera
+#[derive(Component, Default)]
+#[require(Node)]
+#[require(ImageNode)]
+struct SlamCameraMonitor;
+
+// Links the SLAM camera output to all the SLAM camera monitors
 fn link_slam_camera_monitor(
-	slam_camera_query: Query<&RenderTarget, With<slam::SLAMCamera>>,
-	slam_monitor_query: Query<&mut ImageNode, With<SLAMCameraMonitor>>,
+	slam_camera_query: Query<&RenderTarget, With<slam::SlamCamera>>,
+	slam_camera_ui_query: Query<&SlamCameraUI>,
+	slam_monitor_query: Query<(&ChildOf, &mut ImageNode), With<SlamCameraMonitor>>,
 ) {
+	
+	/*
 	let Ok(single_camera) = slam_camera_query.single() else {return;};
 	let Some(slam_camera_image_handle) = single_camera.as_image() else {return;};
 	
-	
+	hkk
 	for mut slam_monitor in slam_monitor_query {
 		if slam_monitor.image != *slam_camera_image_handle {
 			slam_monitor.image = slam_camera_image_handle.clone();
 		}
 	}
+	*/
+	
+	for (slam_monitor_parent, mut slam_monitor_imagenode) in slam_monitor_query {
+		
+		let Ok(slam_camera_ui) = slam_camera_ui_query.get(slam_monitor_parent.parent()) else {
+			println!("Failed to link SLAM Camera to SLAM camera monitor: SlamCameraMonitor is not child of SlamCameraUI");
+			continue;
+		};
+		let Some(slam_camera_monitor_target_camera) = slam_camera_ui.target_camera else {
+			println!("Failed to link SLAM camera to SLAM camera monitor: Target camera not specified");
+			continue;
+		};
+		let Ok(slam_camera_render_target) = slam_camera_query.get(slam_camera_monitor_target_camera) else {
+			println!("Failed to link SLAM camera to SLAM camera monitor: Target camera not found / missing SlamCamera component");
+			continue;
+		};
+		let Some(slam_camera_image_handle) = slam_camera_render_target.as_image() else {
+			println!("Failed to link SLAM camera to SLAM camera monitor: Target camera has no image handle");
+			continue;
+		};
+		
+		if slam_monitor_imagenode.image != *slam_camera_image_handle {
+			println!("Linked SLAM camera to SLAM camera monitor");
+			slam_monitor_imagenode.image = slam_camera_image_handle.clone();
+		}
+		
+		
+	}
 	
 }
 
+
+
+
+
+
+// This component monitors the map camera
+#[derive(Component)]
+#[require(Node)]
+#[require(ImageNode)]
+pub struct MapCameraMonitor;
+
+// Links the Map camera output to all the map camera monitors
 fn link_map_camera_monitor(
 	map_camera_query: Query<&RenderTarget, With<slam::MapCamera>>,
 	map_monitor_query: Query<&mut ImageNode, With<MapCameraMonitor>>,
@@ -119,80 +99,101 @@ fn link_map_camera_monitor(
 
 
 
-
+// System that draws world track points in the slam camera
 pub fn draw_track_point_gizmos(mut gizmos: Gizmos, query: Query<&GlobalTransform, With<slam::WorldTrackPoint>>) {
 	
 	for transform in query {
 		let mut sphere_isometry = Isometry3d::from_translation(transform.translation());
 		sphere_isometry.rotation = transform.rotation();
-		gizmos.sphere(sphere_isometry, 0.1, GREEN);
+		gizmos.sphere(sphere_isometry, 0.1, Color::srgb_u8(0,255,0));
 	}
 }
 
-pub fn spawn_ui(
-	mut commands: Commands,
-	//mut assets: Res<AssetServer>,
-	//mut images: ResMut<Assets<Image>>,
-	//mut meshes: ResMut<Assets<Mesh>>,
-	//mut materials: ResMut<Assets<StandardMaterial>>
+// System that draws slam keyframes in the map camera
+pub fn draw_slam_keyframe_gizmos(mut gizmos: Gizmos<MapCameraGizmoConfigGroup>, query: Query<(&GlobalTransform, &slam::SlamKeyframe)>) {
+	
+	let gizmo_width = 0.1;
+	let gizmo_height = 0.1;
+	
+	for (transform, slam_keyframe) in query {
+		
+		let position = transform.transform_point(slam_keyframe.position_estimate.mean);
+		let tracker_isometry = Isometry3d {translation: position.to_vec3a(), rotation: slam_keyframe.rotation_guess};
+		
+		
+		//gizmos.sphere(tracker_isometry, 0.1, Color::srgb_u8(255, 0, 0));
+		
+		let right = tracker_isometry.transform_point(Vec3 {x: 1.0, y: 0.0, z: 0.0}).to_vec3();
+		let up = tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 1.0}).to_vec3();
+		let forward = tracker_isometry.transform_point(Vec3 {x: 0.0, y: -1.0, z: 0.0}).to_vec3();
+		
+		gizmos.rect(tracker_isometry, Vec2{ x: 0.1, y: 0.1}, Color::srgb_u8(0, 0, 255));
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: 0.0, y: gizmo_height, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: gizmo_height, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
+		
+	}
+	
+}
+
+
+// This component displays the screenspace trackers on the SLAM Camera
+#[derive(Component)]
+#[require(Node)]
+struct TrackPointUI;
+
+// Moves the Node componet attached to all the TrackPointUI components to their screenspace
+// position.
+fn move_track_point_ui(
+	slam_camera_query: Query<(&Camera, &GlobalTransform), With<slam::SlamCamera>>,
+	mut track_point_query: Query<&mut Node, With<TrackPointUI>>,
+	track2d_query: Query<&slam::Track2D>,
+	world_track_point_query: Query<&GlobalTransform, With<slam::WorldTrackPoint>>,
 ) {
 	
-	commands.spawn(
-		(
-			Camera2d,
-			RenderLayers::layer(2),
-		)
-	);
-	//commands.spawn(button(&assets, image_handle));
+	for (mut track_point_crosshair_node, track2d) in track_point_query.iter_mut().zip(track2d_query) {
+		let viewport_pos_percent = track2d.viewport_position;
+		
+		track_point_crosshair_node.left = percent(viewport_pos_percent.x * 100.0);
+		track_point_crosshair_node.top = percent(viewport_pos_percent.y * 100.0);
+	}
 	
-	// Spawn in ui
-	commands.spawn(
-		(
-			Node {
-				width: percent(100),
-				height: percent(100),
-				align_items: AlignItems::Center,
-				justify_content: JustifyContent::Center,
-				..default()
-			},
-			children![
-				(
-					Node {
-						width: percent(50),
-						aspect_ratio: Some(1.0),
-						..default()
-					},
-					BackgroundColor(Color::srgb_u8(0, 255, 0)),
-					SLAMCameraUI,
-				),
-				(
-					Node {
-						width: percent(50),
-						..default()
-					},
-					MapCameraMonitor,
-				),
-			]
-		)
-	);
+	let Ok((slam_camera, slam_camera_transform)) = slam_camera_query.single() else {return;};
 	
+	for (mut track_point_crosshair_node, world_track_point_transform) in track_point_query.iter_mut().zip(world_track_point_query.iter()) {
+		
+		let Ok(viewport_pos) = slam_camera.world_to_viewport(slam_camera_transform, world_track_point_transform.translation()) else {continue; };
+		
+		let Some(viewport_size) = slam_camera.logical_viewport_size() else {continue;};
+		
+		let viewport_pos_percent = viewport_pos / viewport_size;
+		
+		track_point_crosshair_node.left = percent(viewport_pos_percent.x * 100.0);
+		track_point_crosshair_node.top = percent(viewport_pos_percent.y * 100.0);
+	}
 	
-	
-	
+}
+
+
+
+#[derive(Component)]
+pub struct SlamCameraUI {
+	pub target_camera: Option<Entity>,
 }
 
 fn populate_slam_preview_tree(
 	mut commands: Commands,
-	query: Query<Entity, Added<SLAMCameraUI>>,
-	
+	query: Query<Entity, Added<SlamCameraUI>>,
 ) {
+	
+	
 	
 	let crosshair_size = 20.0; // Px
 	
 	for entity in &query {
 		commands.entity(entity).with_children(|parent| {
 			parent.spawn((
-				SLAMCameraMonitor,
+				SlamCameraMonitor{ ..default()},
 				Node {
 					width: percent(100.0),
 					height: percent(100.0),
@@ -204,7 +205,7 @@ fn populate_slam_preview_tree(
 				},
 			));
 			
-			for i in 0..8 {
+			for _ in 0..8 {
 				parent.spawn((
 					TrackPointUI,
 					Node {
@@ -252,71 +253,80 @@ fn populate_slam_preview_tree(
 	
 }
 
-// Old
-/*
-fn spawn_slam_preview_track_point_ui(
-	mut commands: Commands,
-	query: Query<Entity, With<SLAMCameraPreview>>,
-	keyboard_input: Res<ButtonInput<KeyCode>>,
-) {
+
+
+pub struct UIPlugin;
+impl Plugin for UIPlugin {
+	fn build(&self, app: &mut App) {
+		
+		// The UI plugin shouldn't spawn in the ui components, only make them work
+		// This will make it easier to specify how the UI links to the Scene
+		
+		app.add_systems(Update, link_slam_camera_monitor);
+		app.add_systems(Update, link_map_camera_monitor);
+		//app.add_systems(Update, draw_gaussian_gizmo);
+		
+		app.add_systems(Update, move_track_point_ui);
+		app.add_systems(Update, populate_slam_preview_tree);
+		//app.add_systems(Update, draw_track_point_gizmos);
+		
+		app.init_gizmo_group::<MapCameraGizmoConfigGroup>();
+		app.add_systems(Update, draw_slam_keyframe_gizmos);
+		
+		app.add_systems(Startup, setup_gizmo_config);
+		
+	}
+}
+
+fn setup_gizmo_config(mut config_store: ResMut<GizmoConfigStore>, mut commands: Commands) {
+   
+    // Put this gizmo group on layer 1
+    let (config, _) = config_store.config_mut::<MapCameraGizmoConfigGroup>();
+    config.render_layers = RenderLayers::layer(1);
 	
-	if keyboard_input.just_pressed(KeyCode::KeyT) == true {
+}
+
+fn draw_gaussian_gizmo(mut gizmos: Gizmos, mut rng: Single<&mut WyRand, With<GlobalRng>>) {
+	
+	let num_samples = 10000;
+	
+	for _ in 0..num_samples {
 		
-		
-		let max_trackers = 8;
-		
-		for entity in &query {
-			commands.entity(entity).with_children(|parent| {
-				for _ in 0..max_trackers {
-					
-					parent.spawn((
-						TrackPointUI,
-						Node {
-							width: Val::Px(20.0),
-							height: Val::Px(20.0),
-							position_type: PositionType::Absolute,
-							left: Val::Percent(50.0),
-							top: Val::Percent(50.0),
-							..default()
-						},
-					)).with_children(|parent| {
-						// Horizontal line
-						parent.spawn((
-							Node {
-								width: Val::Px(20.0),
-								height: Val::Px(2.0),
-								position_type: PositionType::Absolute,
-								top: Val::Px(9.0),
-								..default()
-							},
-							BackgroundColor(Color::srgb_u8(255, 0, 0)),
-						));
-						
-						// Vertical line
-						parent.spawn((
-							Node {
-								width: Val::Px(2.0),
-								height: Val::Px(20.0),
-								position_type: PositionType::Absolute,
-								left: Val::Px(9.0),
-								..default()
-							},
-							BackgroundColor(Color::srgb_u8(255, 0, 0)),
-						));
-					});
-					println!("Spawned track point and crosshair children");
-					
-				}
-			});
+		let threshold = (rng.next_u32() % 1000000) as f32 / 1000000.0;
+		let mut num_tries = 0;
+		let mut found_valid_spot = false;
+		while found_valid_spot == false && num_tries < 1 {
+			
+			
+			num_tries += 1;
+			let rand_x = ((rng.next_u32() % 1000000) as f32 / 1000000.0 - 0.5) * 10.0;
+			let rand_y = ((rng.next_u32() % 1000000) as f32 / 1000000.0 - 0.5) * 10.0;
+			let rand_z = ((rng.next_u32() % 1000000) as f32 / 1000000.0 - 0.5) * 10.0;
+			
+			
+			let sample_pos = Vec3{x: rand_x, y: rand_y, z: rand_z};
+			let gaussian_mean = Vec3{x: 0.0, y: 0.0, z: 0.0};
+			let gaussian_covariance = Mat3::IDENTITY;
+			let gaussian_sample = slam::sample_gaussian(&sample_pos, &gaussian_mean, &gaussian_covariance);
+			
+			if gaussian_sample < threshold {
+				//println!("Retrying point, {gaussian_sample} < {threshold}");
+				continue;
+			}
+			//println!("{gaussian_sample} > {threshold}");
+			found_valid_spot = true;
+			
+			let isometry = Isometry3d {translation: Vec3{x: rand_x, y: rand_y, z: rand_z}.into(), rotation: Quat::IDENTITY};
+			gizmos.cross(isometry, 0.03, Color::srgb_u8(0, 255, 0));
+			
 		}
 		
 	}
 	
+	
+	//let point_isometry = Isometry3d{rotation: }
+	//gizmos.cross()
+	
 }
-*/
-
-
-
-
 
 
