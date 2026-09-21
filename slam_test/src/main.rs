@@ -16,6 +16,7 @@ mod slam;
 pub struct KeyboardControl {
 	move_speed: f32,
 	rotation_speed: f32,
+	enabled: i32,
 }
 
 
@@ -139,6 +140,10 @@ fn spawn_scene(
 	commands.spawn(
 		(
 			Camera3d::default(),
+			Projection::Perspective(PerspectiveProjection {
+				fov: 90.0 / 180.0 * 3.1415,
+				..default()
+			}),
 			Camera {
 				order: -1,
 				//clear_color: Color::srgb_u8(230, 240, 255).into(),
@@ -148,14 +153,18 @@ fn spawn_scene(
 			RenderTarget::Image(slam_camera_texture_handle.clone().into()),
 			RenderLayers::layer(0),
 			slam::SlamCamera,
-			KeyboardControl{ move_speed: 5.0, rotation_speed: 0.05},
-			Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y)
+			KeyboardControl{ move_speed: 5.0, rotation_speed: 0.05, enabled: 1},
+			Transform::from_xyz(0.0, 1.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y)
 		)
 	);
 	
 	commands.spawn(
 		(
 			Camera3d::default(),
+			Projection::Perspective(PerspectiveProjection {
+				fov: 90.0 / 180.0 * 3.1415,
+				..default()
+			}),
 			Camera {
 				order: 0,
 				clear_color: Color::srgb_u8(30, 30, 30).into(),
@@ -164,8 +173,8 @@ fn spawn_scene(
 			RenderTarget::Image(virtual_camera_texture_handle.clone().into()),
 			RenderLayers::layer(1),
 			slam::MapCamera,
-			//KeyboardControl{ move_speed: 10.0, rotation_speed: 0.05},
-			Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y)
+			KeyboardControl{ move_speed: 5.0, rotation_speed: 0.05, enabled: 0},
+			Transform::from_xyz(0.0, 1.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y)
 		)
 	);
 	
@@ -247,18 +256,26 @@ fn quit_system(
 }
 
 fn keyboard_control_system(
-	mut query: Query<(&mut Transform, &KeyboardControl)>,
+	mut query: Query<(&mut Transform, &mut KeyboardControl)>,
 	keyboard_input: Res<ButtonInput<KeyCode>>,
 	fixed_time: Res<Time<Fixed>>
 ) {
 	
 	
-	for (mut transform, keyboard_control) in &mut query {
+	for (mut transform, mut keyboard_control) in &mut query {
 		
 		let transform_forward = transform.forward();
 		let transform_right = transform.right();
 		let transform_up = transform.up();
 		
+		if keyboard_input.just_pressed(KeyCode::Enter) == true {
+			let new_enabled = 1 - keyboard_control.enabled;
+			keyboard_control.enabled = new_enabled;
+		}
+		
+		if keyboard_control.enabled == 0 {
+			continue;
+		}
 		
 		if keyboard_input.pressed(KeyCode::KeyW) == true {
 			transform.translation += transform_forward * fixed_time.delta_secs() * keyboard_control.move_speed;
@@ -291,6 +308,7 @@ fn keyboard_control_system(
 		if keyboard_input.pressed(KeyCode::KeyJ) == true {
 			transform.rotation = Quat::from_scaled_axis(transform_right * -keyboard_control.rotation_speed) * transform.rotation;
 		}
+		
 		
 	}
 	

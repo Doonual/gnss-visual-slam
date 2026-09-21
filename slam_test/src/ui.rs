@@ -112,30 +112,60 @@ pub fn draw_track_point_gizmos(mut gizmos: Gizmos, query: Query<&GlobalTransform
 // System that draws slam keyframes in the map camera
 pub fn draw_slam_keyframe_gizmos(mut gizmos: Gizmos<MapCameraGizmoConfigGroup>, query: Query<(&GlobalTransform, &slam::SlamKeyframe)>) {
 	
-	let gizmo_width = 0.1;
-	let gizmo_height = 0.1;
+	let gizmo_width = 0.5;
+	let gizmo_height = 0.5;
+	let gizmo_depth = 0.25;
 	
 	for (transform, slam_keyframe) in query {
 		
-		let position = transform.transform_point(slam_keyframe.position_estimate.mean);
-		let tracker_isometry = Isometry3d {translation: position.to_vec3a(), rotation: slam_keyframe.rotation_guess};
+		let position = transform.transform_point(slam_keyframe.position_uncertainty.mean);
+		let tracker_isometry = Isometry3d {translation: position.to_vec3a(), rotation: transform.rotation()};
+		
+		let col = Color::srgb_u8(0, 0, 255);
+		
+		gizmos.line(tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
+		
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: 0.5 * gizmo_height * 1.2, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: 0.5 * gizmo_height * 1.2, z: -gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.5 * gizmo_height * 1.8, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: 0.5 * gizmo_height * 1.2, z: -gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: 0.5 * gizmo_height * 1.2, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.5 * gizmo_height * 1.8, z: -gizmo_depth}).to_vec3(), col);
 		
 		
-		//gizmos.sphere(tracker_isometry, 0.1, Color::srgb_u8(255, 0, 0));
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 0.0 * gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 0.0 * gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 0.0 * gizmo_depth}).to_vec3(), col);
+		gizmos.line(tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 0.0 * gizmo_depth}).to_vec3(), col);
 		
-		let right = tracker_isometry.transform_point(Vec3 {x: 1.0, y: 0.0, z: 0.0}).to_vec3();
-		let up = tracker_isometry.transform_point(Vec3 {x: 0.0, y: 0.0, z: 1.0}).to_vec3();
-		let forward = tracker_isometry.transform_point(Vec3 {x: 0.0, y: -1.0, z: 0.0}).to_vec3();
 		
-		gizmos.rect(tracker_isometry, Vec2{ x: 0.1, y: 0.1}, Color::srgb_u8(0, 0, 255));
-		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
-		gizmos.line(tracker_isometry.transform_point(Vec3 {x: 0.0, y: gizmo_height, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
-		gizmos.line(tracker_isometry.transform_point(Vec3 {x: -0.5 * gizmo_width, y: gizmo_height * 0.6, z: 0.0}).to_vec3(), tracker_isometry.transform_point(Vec3 {x: 0.0, y: gizmo_height, z: 0.0}).to_vec3(), Color::srgb_u8(0, 0, 255));
 		
 	}
 	
 }
 
+pub fn draw_slam_keyframe_projected_tracker_gizmos(mut gizmos: Gizmos<MapCameraGizmoConfigGroup>, query: Query<(&slam::ProjectedTracker)>, slam_keyframe_query: Query<(&GlobalTransform, &slam::SlamKeyframe)>) {
+	
+	for projected_tracker in query {
+		
+		let Ok((slam_keyframe_transform, slam_keyframe)) = slam_keyframe_query.get(projected_tracker.keyframe) else {
+			println!("Failed to draw projected tracker, owned keyframe not found");
+			continue;
+		};
+		
+		let camera_matrix = slam_keyframe.camera_projection;
+		let project_point = Vec2{x: projected_tracker.tracked2d_pos.x - 0.5, y: projected_tracker.tracked2d_pos.y - 0.5};
+		let projected_point = camera_matrix.inverse().project_point3(Vec3{x: 2.0 * project_point.x, y: -2.0 * project_point.y, z: 1.0});
+		
+		
+		
+		
+		gizmos.line(slam_keyframe_transform.translation(), slam_keyframe_transform.transform_point(projected_point * 100.0), Color::srgb_u8(255, 0, 255));
+		
+		
+	}
+	
+}
 
 // This component displays the screenspace trackers on the SLAM Camera
 #[derive(Component)]
@@ -272,6 +302,7 @@ impl Plugin for UIPlugin {
 		
 		app.init_gizmo_group::<MapCameraGizmoConfigGroup>();
 		app.add_systems(Update, draw_slam_keyframe_gizmos);
+		app.add_systems(Update, draw_slam_keyframe_projected_tracker_gizmos);
 		
 		app.add_systems(Startup, setup_gizmo_config);
 		
@@ -279,7 +310,7 @@ impl Plugin for UIPlugin {
 }
 
 fn setup_gizmo_config(mut config_store: ResMut<GizmoConfigStore>, mut commands: Commands) {
-   
+	   
     // Put this gizmo group on layer 1
     let (config, _) = config_store.config_mut::<MapCameraGizmoConfigGroup>();
     config.render_layers = RenderLayers::layer(1);

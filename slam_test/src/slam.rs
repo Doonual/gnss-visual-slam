@@ -31,7 +31,11 @@ pub fn sample_gaussian(sample_position: &Vec3, mean: &Vec3, covariance: &Mat3) -
 	
 }
 
+// Component that designates an entity is a camera for collecting tracking points and making
+// keyframes
 #[derive(Component)]
+#[require(GlobalTransform)]
+#[require(Camera3d)]
 pub struct SlamCamera;
 
 // Active tracks on a camera's render plane
@@ -92,7 +96,7 @@ fn apply_worldtrackpoint_tracks(
 	mut commands: Commands,
 	mut track2dsource_query: Query<(Entity, &mut Track2DSource, &GlobalTransform, &PointIndex), With<WorldTrackPoint>>,
 	slam_camera_query: Query<(Entity, &Camera, &GlobalTransform), With<SlamCamera>>,
-	track2d_query: Query<(Entity, &Track2D)>,
+	mut track2d_query: Query<(Entity, &mut Track2D)>,
 ) {
 	
 	// Spawning new Track2D components
@@ -107,8 +111,9 @@ fn apply_worldtrackpoint_tracks(
 			if viewport_position.x < 0.0 || viewport_position.x > 1.0 || viewport_position.y < 0.0 || viewport_position.y > 1.0 {continue;}
 			
 			let mut tracker_exists = false;
-			for (_, track2d) in track2d_query {
+			for (_, mut track2d) in &mut track2d_query {
 				if track2d.owned_camera == Some(slam_camera_entity) && track2d.track_source == Some(track2dsource_entity) {
+					track2d.viewport_position = viewport_position.clone();
 					tracker_exists = true;
 					break;
 				}
@@ -135,7 +140,7 @@ fn apply_worldtrackpoint_tracks(
 	}
 	
 	// Check for invalid Track2D
-	for (track2d_entity, track2d) in track2d_query {
+	for (track2d_entity, mut track2d) in track2d_query {
 		
 		let Some(track_source_entity) = track2d.track_source.clone() else {
 			commands.entity(track2d_entity).despawn();
@@ -183,23 +188,29 @@ fn apply_worldtrackpoint_tracks(
 // The entity this is attached to will be a recorded camera pose
 // All of it's children will be recordings of track points
 #[derive(Component)]
-#[require(Transform)]
+#[require(GlobalTransform)]
 pub struct SlamKeyframe {
-	pub position_estimate: Gaussian3,
-	pub rotation_guess: Quat,
+	pub position_uncertainty: Gaussian3,
 	pub rotation_uncertainty: Gaussian3,
+	
+	pub camera_projection: Mat4,
+	
 }
 
+// Maybe move the keyframe data to its own component?
+// One that says this entity belongs to a keyframe?
+// Could avoid creating new entities when creating keyframes, just add the keyframe component
 #[derive(Component)]
-struct ProjectedTracker {
-	keyframe: Option<Entity>,
-	tracked2d_pos: Vec2,
+#[require(PointIndex)]
+pub struct ProjectedTracker {
+	pub keyframe: Entity,
+	pub tracked2d_pos: Vec2,
 }
 
 
 fn create_slam_keyframe(
 	mut commands: Commands,
-	slam_camera_query: Query<(Entity, &GlobalTransform), With<SlamCamera>>,
+	slam_camera_query: Query<(Entity, &GlobalTransform, &Camera), With<SlamCamera>>,
 	track2d_query: Query<&Track2D>,
 	keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
@@ -209,16 +220,69 @@ fn create_slam_keyframe(
 	}
 	
 	
-	for (slam_camera, globaltransform) in slam_camera_query {
-		commands.spawn((
-			SlamKeyframe {
-				position_estimate: Gaussian3 {mean: globaltransform.translation(), covariance: Mat3::IDENTITY},
-				rotation_guess: globaltransform.rotation(),
-				rotation_uncertainty: Gaussian3 {mean: Vec3::ZERO, covariance: Mat3::IDENTITY},
+	let mut cameras_in_created_keyframes: Vec<(Entity, Entity)> = Vec::new();
+	
+	for (slam_camera, globaltransform, slam_camera_camera3d) in slam_camera_query {
+		
+		let Some(viewport_size) = slam_camera_camera3d.logical_viewport_size() else {continue;};
+		
+		
+		
+		let slam_keyframe_entity = commands.spawn((
+			Transform {
+				translation: globaltransform.translation(),
+				rotation: globaltransform.rotation(),
+				..default()
 			},
-		));
+			SlamKeyframe {
+				position_uncertainty: Gaussian3 {mean: Vec3::ZERO, covariance: Mat3::IDENTITY},
+				rotation_uncertainty: Gaussian3 {mean: Vec3::ZERO, covariance: Mat3::IDENTITY},
+				
+				camera_projection: slam_camera_camera3d.computed.clip_from_view,
+				
+			},
+		)).id();
+		cameras_in_created_keyframes.push((slam_camera, slam_keyframe_entity));
 		
 		println!("Created SLAM keyframe");
+	}
+	for track2d in track2d_query {
+		
+		let mut owned_keyframe: Option<Entity> = None;
+		let Some(owned_camera) = track2d.owned_camera else {
+			println!("Cannot add Track2D to keyframe, no owned camera");
+			continue;
+		};
+		for (slam_camera, slam_keyframe) in &cameras_in_created_keyframes {
+			
+			if &owned_camera == slam_camera {
+				owned_keyframe = Some(slam_keyframe.clone());
+				break;
+			}
+			
+		}
+		
+		if let Some(found_owned_keyframe) = owned_keyframe {
+			
+			let x = track2d.viewport_position;
+			println!("Tracked pos: {x}");
+			
+			let projected_tracker = commands.spawn((
+				ProjectedTracker {
+					keyframe: found_owned_keyframe,
+					tracked2d_pos: track2d.viewport_position,
+				},
+			)).id();
+			
+			commands.entity(found_owned_keyframe).add_child(projected_tracker);
+			
+			
+		}
+		else {
+			println!("Failed to create ProjectedTracker, owner keyframe not found");
+		}
+		
+		
 	}
 	
 }
