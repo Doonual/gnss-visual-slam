@@ -1,12 +1,75 @@
 use bevy::prelude::*;
 use bevy::math::ops::*;
 
+use nalgebra::SymmetricEigen;
+
 pub struct Gaussian3 {
 	pub mean: Vec3,
 	pub covariance: Mat3,
 }
 
 
+pub fn get_covariance(eigenvector_a: Vec3, eigenvalue_a: f32, eigenvector_b: Vec3, eigenvalue_b: f32, eigenvector_c: Vec3, eigenvalue_c: f32) -> Mat3 {
+	
+	let eigenvectors = nalgebra::Matrix3::new(
+		eigenvector_a.x, eigenvector_b.x, eigenvector_c.x,
+		eigenvector_a.y, eigenvector_b.y, eigenvector_c.y,
+		eigenvector_a.z, eigenvector_b.z, eigenvector_c.z,
+	);
+	let eigenvalues = nalgebra::Matrix3x1::new(
+		eigenvalue_a,
+		eigenvalue_b,
+		eigenvalue_c,
+	);
+	
+	let test = SymmetricEigen {
+		eigenvectors: eigenvectors,
+		eigenvalues: eigenvalues,
+	};
+	let covariance_matrix = test.recompose();
+	
+	return Mat3::from_cols_slice(covariance_matrix.as_slice());
+	
+}
+
+// Returns each eigen vector in the direction of the vector and each eigenvalue in the magnitude of
+// the vector
+pub fn get_eigenvectors(covariance: &Mat3) -> Vec<Vec3> {
+	
+	let covariance_matrix = nalgebra::Matrix3::from_column_slice(&covariance.to_cols_array());
+	//let covariance_matrix = nalgebra::Matrix3::new(
+		//covariance.x_axis.x, covariance.y_axis.x, covariance.z_axis.x,
+		//covariance.x_axis.y, covariance.y_axis.y, covariance.z_axis.y,
+		//covariance.x_axis.z, covariance.y_axis.z, covariance.z_axis.z,
+	//);
+	
+	let eig = SymmetricEigen::new(covariance_matrix);
+	let eigenvalues = eig.eigenvalues.map(|l| l.max(0.0));
+	let eigenvectors = eig.eigenvectors;
+	
+	//println!("Eigenvalues: {eigenvalues}");
+	//println!("Eigenvectors: {eigenvectors}");
+	
+	let eigenvector_a = -Vec3{x: eigenvectors.column(0).x, y: eigenvectors.column(0).y , z: eigenvectors.column(0).z} * eigenvalues.x;
+	let eigenvector_b = Vec3{x: eigenvectors.column(1).x, y: eigenvectors.column(1).y , z: eigenvectors.column(1).z} * eigenvalues.y;
+	let mut eigenvector_c = Vec3{x: eigenvectors.column(2).x, y: eigenvectors.column(2).y , z: eigenvectors.column(2).z} * eigenvalues.z;
+	
+	let test_vec = Vec3::cross(eigenvector_a.normalize(), eigenvector_b.normalize());
+	let diff = (test_vec - eigenvector_c.normalize()).length();
+	
+	if (diff > 1.0) {
+		eigenvector_c = -eigenvector_c;
+	}
+	
+	
+	let mut vectors : Vec<Vec3> = Vec::new();
+	vectors.push(eigenvector_c);
+	vectors.push(eigenvector_b);
+	vectors.push(eigenvector_a);
+	
+	return vectors;
+	
+}
 
 pub fn sample_gaussian_struct(sample_position: &Vec3, gaussian: Gaussian3) -> f32 {
 	
@@ -205,6 +268,7 @@ pub struct SlamKeyframe {
 pub struct ProjectedTracker {
 	pub keyframe: Entity,
 	pub tracked2d_pos: Vec2,
+	pub local_pose: Gaussian3,
 }
 
 
@@ -262,16 +326,35 @@ fn create_slam_keyframe(
 			
 		}
 		
+		
+		
 		if let Some(found_owned_keyframe) = owned_keyframe {
 			
 			let x = track2d.viewport_position;
 			println!("Tracked pos: {x}");
 			
+			let Ok((_, _, owned_camera_component)) = slam_camera_query.get(owned_camera) else {continue;};
+			let camera_matrix = owned_camera_component.computed.clip_from_view;
+			
+			let project_point = Vec3 {x: 2.0 * track2d.viewport_position.x - 1.0, y: -2.0 * track2d.viewport_position.y + 1.0, z: 1.0};
+			let forward_vec = camera_matrix.inverse().project_point3(project_point).normalize();
+			
+			let flat_component = Vec2{x: forward_vec.x, y: forward_vec.z}.length();
+			let vertical_component = forward_vec.y;
+			let angle = atan2(forward_vec.z, forward_vec.x);
+			
+			let up_vec = Vec3{x: -cos(angle) * vertical_component, y: flat_component, z: -sin(angle) * vertical_component};
+			let right_vec = Vec3::cross(forward_vec, up_vec);
+			
+			let cov = get_covariance(forward_vec, 5.0, up_vec, 0.01, right_vec, 0.011);
+			
 			let projected_tracker = commands.spawn((
 				ProjectedTracker {
 					keyframe: found_owned_keyframe,
 					tracked2d_pos: track2d.viewport_position,
+					local_pose: Gaussian3{mean: forward_vec * 5.0, covariance: cov},
 				},
+				
 			)).id();
 			
 			commands.entity(found_owned_keyframe).add_child(projected_tracker);

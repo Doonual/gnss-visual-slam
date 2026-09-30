@@ -5,7 +5,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::GlobalRng;
 use rand_core::Rng;
-
+use bevy::math::ops::*;
 //use bevy::render::view::RenderLayers;
 
 use crate::slam;
@@ -123,6 +123,8 @@ pub fn draw_slam_keyframe_gizmos(mut gizmos: Gizmos<MapCameraGizmoConfigGroup>, 
 		
 		let col = Color::srgb_u8(0, 0, 255);
 		
+		slam::get_eigenvectors(&slam_keyframe.position_uncertainty.covariance);
+		
 		gizmos.line(tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
 		gizmos.line(tracker_isometry.transform_point(Vec3{ x: -0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
 		gizmos.line(tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: 0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), tracker_isometry.transform_point(Vec3{ x: 0.5 * gizmo_width, y: -0.5 * gizmo_height, z: -gizmo_depth}).to_vec3(), col);
@@ -157,10 +159,58 @@ pub fn draw_slam_keyframe_projected_tracker_gizmos(mut gizmos: Gizmos<MapCameraG
 		let project_point = Vec2{x: projected_tracker.tracked2d_pos.x - 0.5, y: projected_tracker.tracked2d_pos.y - 0.5};
 		let projected_point = camera_matrix.inverse().project_point3(Vec3{x: 2.0 * project_point.x, y: -2.0 * project_point.y, z: 1.0});
 		
+		let mut eigenvectors = slam::get_eigenvectors(&projected_tracker.local_pose.covariance);
 		
+		let Some(mut eigenvector_a) = eigenvectors.pop() else {
+			println!("Failed to draw projected tracker, missing eigenvector");
+			continue;
+		};
+		let Some(mut eigenvector_b) = eigenvectors.pop() else {
+			println!("Failed to draw projected tracker, missing eigenvector");
+			continue;
+		};
+		let Some(mut eigenvector_c) = eigenvectors.pop() else {
+			println!("Failed to draw projected tracker, missing eigenvector");
+			continue;
+		};
+		let length = eigenvector_a.length();
+		println!("Eigenvector_a: {length}");
 		
+		eigenvector_a = slam_keyframe_transform.transform_point(eigenvector_a) - slam_keyframe_transform.translation();
+		eigenvector_b = slam_keyframe_transform.transform_point(eigenvector_b) - slam_keyframe_transform.translation();
+		eigenvector_c = slam_keyframe_transform.transform_point(eigenvector_c) - slam_keyframe_transform.translation();
 		
-		gizmos.line(slam_keyframe_transform.translation(), slam_keyframe_transform.transform_point(projected_point * 100.0), Color::srgb_u8(255, 0, 255));
+		let quat_a = Quat::from_mat3(&Mat3::from_cols(eigenvector_b.normalize(), eigenvector_c.normalize(), eigenvector_a.normalize()));
+		let quat_b = Quat::from_mat3(&Mat3::from_cols(eigenvector_c.normalize(), eigenvector_a.normalize(), eigenvector_b.normalize()));
+		let quat_c = Quat::from_mat3(&Mat3::from_cols(eigenvector_a.normalize(), eigenvector_b.normalize(), eigenvector_c.normalize()));
+		let isometry_c = Isometry3d{translation: slam_keyframe_transform.transform_point(projected_tracker.local_pose.mean).to_vec3a(), rotation: quat_c };
+		let isometry_a = Isometry3d{translation: slam_keyframe_transform.transform_point(projected_tracker.local_pose.mean).to_vec3a(), rotation: quat_a };
+		let isometry_b = Isometry3d{translation: slam_keyframe_transform.transform_point(projected_tracker.local_pose.mean).to_vec3a(), rotation: quat_b };
+		
+		let num = 5;
+		for i in -num..num+1 {
+			
+			let ammount = i as f32 / (num + 1) as f32;
+			let scale = sqrt(1.0 - ammount * ammount);
+			
+			let new_isometry_a = Isometry3d{translation: isometry_a.translation + ammount * eigenvector_a.to_vec3a(), rotation: isometry_a.rotation};
+			gizmos.ellipse(new_isometry_a, Vec2{x: eigenvector_c.length() * scale, y: eigenvector_b.length() * scale}, Color::srgb_u8(200, 200, 200));
+			
+			let new_isometry_b = Isometry3d{translation: isometry_b.translation + ammount * eigenvector_b.to_vec3a(), rotation: isometry_b.rotation};
+			gizmos.ellipse(new_isometry_b,Vec2{x: eigenvector_c.length() * scale, y: eigenvector_a.length() * scale}, Color::srgb_u8(200, 200, 200));
+			
+			let new_isometry_c = Isometry3d{translation: isometry_c.translation + ammount * eigenvector_c.to_vec3a(), rotation: isometry_c.rotation};
+			gizmos.ellipse(new_isometry_c, Vec2{x: eigenvector_a.length() * scale, y: eigenvector_b.length() * scale}, Color::srgb_u8(200, 200, 200));
+		}
+		
+		//println!("Eigenvector A: {eigenvector_a}");
+		//println!("Eigenvector B: {eigenvector_b}");
+		//println!("Eigenvector C: {eigenvector_c}");
+		
+		//gizmos.line(slam_keyframe_transform.translation(), slam_keyframe_transform.transform_point(projected_point * 100.0), Color::srgb_u8(255, 0, 255));
+		gizmos.line(isometry_c.translation.to_vec3(), isometry_c.translation.to_vec3() + eigenvector_a, Color::srgb_u8(255, 0, 0));
+		gizmos.line(isometry_a.translation.to_vec3(), isometry_a.translation.to_vec3() + eigenvector_b, Color::srgb_u8(0, 255, 0));
+		gizmos.line(isometry_b.translation.to_vec3(), isometry_b.translation.to_vec3() + eigenvector_c, Color::srgb_u8(0, 0, 255));
 		
 		
 	}
@@ -359,5 +409,4 @@ fn draw_gaussian_gizmo(mut gizmos: Gizmos, mut rng: Single<&mut WyRand, With<Glo
 	//gizmos.cross()
 	
 }
-
 

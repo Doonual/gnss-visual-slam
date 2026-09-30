@@ -11,3 +11,4 @@ bevy_framepace = "0.18.0"
 rand_core = "0.10"
 bevy_rand = "0.15"
 bevy_prng = { version = "0.15", features = ["chacha20", "wyrand"] }
+nalgebra = "0.35.0"
