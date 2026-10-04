@@ -3,6 +3,7 @@ use bevy::{input_focus::InputFocus,};
 use bevy::camera::RenderTarget;
 use bevy::{camera::visibility::RenderLayers, render::render_resource::TextureFormat};
 
+use bevy_mod_imgui::prelude::*;
 
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyPlugin;
@@ -32,25 +33,27 @@ fn main() {
 	app.add_plugins(DefaultPlugins.set(WindowPlugin {
 		primary_window: Some(Window {
 			present_mode: bevy::window::PresentMode::AutoNoVsync,
+			desired_maximum_frame_latency: core::num::NonZeroU32::new(1),
 			..default()
 		}),
 		..default()
 	}));
-	//app.add_plugins(EguiPlugin::default());
-	//app.add_plugins(WorldInspectorPlugin::new());
+	app.add_plugins(bevy_mod_imgui::ImguiPlugin {
+		ini_filename: Some("imgui_state.ini".into()),
+		..default()
+	});
+	
 	app.configure_sets(Startup, StartupSet::SpawnScene);
-	//app.add_plugins(DefaultPlugins);
-	//app.add_plugins(bevy_framepace::FramepacePlugin);
 	app.add_plugins(EntropyPlugin::<WyRand>::default());
 	app.add_plugins(ui::UIPlugin);
 	app.add_plugins(slam::SlamPlugin);
 	app.init_resource::<InputFocus>();
-	//app.add_systems(Startup, spawn_scene.in_set(StartupSet::SpawnScene));
 	app.add_systems(Startup, spawn_scene);
 	app.add_systems(Startup, spawn_ui.after(spawn_scene));
 	
 	app.add_systems(PreUpdate, keyboard_control_system);
 	app.add_systems(PreUpdate, quit_system);
+	app.add_systems(Update, imgui_example_ui);
 	app.run();
 	
 }
@@ -316,4 +319,19 @@ fn keyboard_control_system(
 }
 
 
-
+fn imgui_example_ui(mut context: NonSendMut<ImguiContext>) {
+	let ui = context.ui();
+	let window = ui.window("Hello world");
+	
+	window.build(|| {
+		ui.text("Hello world!");
+		ui.text("This...is...bevy_mod_imgui!");
+		ui.separator();
+		let mouse_pos = ui.io().mouse_pos;
+		ui.text(format!(
+			"Mouse Position: ({:.1},{:.1})",
+			mouse_pos[0], mouse_pos[1]
+		));
+	});
+	
+}
