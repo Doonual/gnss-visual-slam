@@ -261,7 +261,7 @@ fn quit_system(
 fn keyboard_control_system(
 	mut query: Query<(&mut Transform, &mut KeyboardControl)>,
 	keyboard_input: Res<ButtonInput<KeyCode>>,
-	fixed_time: Res<Time<Fixed>>
+	fixed_time: Res<Time>
 ) {
 	
 	
@@ -321,15 +321,15 @@ fn keyboard_control_system(
 
 fn imgui_example_ui(mut context: NonSendMut<ImguiContext>) {
 	let ui = context.ui();
-	let window = ui.window("Hello world");
+	let window = ui.window("hello world");
 	
 	window.build(|| {
-		ui.text("Hello world!");
-		ui.text("This...is...bevy_mod_imgui!");
+		ui.text("hello world!");
+		ui.text("this...is...bevy_mod_imgui!");
 		ui.separator();
 		let mouse_pos = ui.io().mouse_pos;
 		ui.text(format!(
-			"Mouse Position: ({:.1},{:.1})",
+			"mouse position: ({:.1},{:.1})",
 			mouse_pos[0], mouse_pos[1]
 		));
 	});

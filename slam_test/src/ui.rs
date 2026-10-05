@@ -6,7 +6,7 @@ use bevy_prng::WyRand;
 use bevy_rand::prelude::GlobalRng;
 use rand_core::Rng;
 use bevy::math::ops::*;
-//use bevy::render::view::RenderLayers;
+use bevy_mod_imgui::prelude::*;
 
 use crate::slam;
 
@@ -356,6 +356,12 @@ impl Plugin for UIPlugin {
 		
 		app.add_systems(Startup, setup_gizmo_config);
 		
+		app.insert_resource(ImguiState::default());
+		app.add_systems(Update, imgui_draw_object_list);
+		app.add_systems(Update, imgui_draw_track2d_in_object_list);
+		
+		
+		
 	}
 }
 
@@ -409,4 +415,72 @@ fn draw_gaussian_gizmo(mut gizmos: Gizmos, mut rng: Single<&mut WyRand, With<Glo
 	//gizmos.cross()
 	
 }
+
+#[derive(Resource)]
+struct ImguiState {
+	
+	
+	show_demo: bool,
+	demo_window_opened: bool,
+	
+}
+impl Default for ImguiState {
+	fn default() -> ImguiState {
+		return ImguiState {
+			show_demo: false,
+			demo_window_opened: true,
+		}
+	}
+}
+
+
+fn imgui_draw_object_list(mut context: NonSendMut<ImguiContext>) {
+	let ui = context.ui();
+	let window = ui.window("SLAM Objects");
+	
+	window.build(|| {
+		ui.text("hello world!");
+		ui.text("this...is...bevy_mod_imgui!");
+		ui.separator();
+		let mouse_pos = ui.io().mouse_pos;
+		ui.text(format!(
+			"mouse position: ({:.1},{:.1})",
+			mouse_pos[0], mouse_pos[1]
+		));
+	});
+	
+}
+
+fn imgui_draw_track2d_in_object_list(mut context: NonSendMut<ImguiContext>, mut imgui_state: ResMut<ImguiState>, track2d_query: Query<(Entity, &slam::Track2D)>) {
+	
+	let ui = context.ui();
+	let window = ui.window("SLAM Objects");
+	
+	window.build(|| {
+		
+		ui.checkbox("Hello", &mut imgui_state.show_demo);
+		if (imgui_state.show_demo == true) {
+			ui.show_demo_window(&mut imgui_state.demo_window_opened);
+		}
+		
+		if let Some(_fart) = ui.tree_node("Track2D") {
+			
+			
+			for (track2d_entity, track2d_component) in track2d_query {
+				
+				//ui.text(format!("Entity: {track2d_entity}"));
+				ui.tree_node(format!("Entity: {track2d_entity}"));
+				
+			}
+		}
+		
+		
+		
+	});
+	
+	
+}
+
+
+
 
