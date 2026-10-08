@@ -7,6 +7,11 @@ pub struct Gaussian3 {
 	pub mean: Vec3,
 	pub covariance: Mat3,
 }
+impl std::fmt::Display for Gaussian3 {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Mean: {} | Covariance: {}", self.mean, self.covariance)
+	}
+}
 
 
 pub fn get_covariance(eigenvector_a: Vec3, eigenvalue_a: f32, eigenvector_b: Vec3, eigenvalue_b: f32, eigenvector_c: Vec3, eigenvalue_c: f32) -> Mat3 {

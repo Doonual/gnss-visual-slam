@@ -2,8 +2,10 @@ use bevy::prelude::*;
 use bevy::{input_focus::InputFocus,};
 use bevy::camera::RenderTarget;
 use bevy::{camera::visibility::RenderLayers, render::render_resource::TextureFormat};
+use bevy::window::WindowResolution;
 
-use bevy_mod_imgui::prelude::*;
+use dear_imgui_bevy::prelude::*;
+use dear_imgui_rs::{fonts::FontId, FontSource};
 
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyPlugin;
@@ -27,21 +29,23 @@ pub enum StartupSet {
 }
 
 
-fn main() {
+fn main() -> Result {
+	
+	let mut window_resolution = WindowResolution::default();
+	window_resolution.set_scale_factor_override(Some(1.0));
 	
 	let mut app = App::new();
 	app.add_plugins(DefaultPlugins.set(WindowPlugin {
 		primary_window: Some(Window {
+			resolution: window_resolution,
 			present_mode: bevy::window::PresentMode::AutoNoVsync,
 			desired_maximum_frame_latency: core::num::NonZeroU32::new(1),
 			..default()
 		}),
 		..default()
 	}));
-	app.add_plugins(bevy_mod_imgui::ImguiPlugin {
-		ini_filename: Some("imgui_state.ini".into()),
-		..default()
-	});
+	
+	app.try_install_imgui(ImguiPlugin::default());
 	
 	app.configure_sets(Startup, StartupSet::SpawnScene);
 	app.add_plugins(EntropyPlugin::<WyRand>::default());
@@ -53,11 +57,38 @@ fn main() {
 	
 	app.add_systems(PreUpdate, keyboard_control_system);
 	app.add_systems(PreUpdate, quit_system);
-	app.add_systems(Update, imgui_example_ui);
+	
+	app.add_systems(Startup, setup_fonts);
+	
+	
+	//app.add_systems(Update, imgui_example_ui);
 	app.run();
+	
+	Ok(())
 	
 }
 
+
+fn setup_fonts(mut contexts: NonSendMut<ImguiContexts>) {
+	
+	static FONT: &[u8] = include_bytes!("../assets/fonts/CommitMonoNerdFont-Bold.ttf");
+	
+	let id = contexts
+	.primary_id()
+	.expect("registry active")
+	.expect("plugin installs a primary context");
+	
+	
+	contexts
+	.configure(id, |ctx| {
+		unsafe {
+			ctx.font_atlas().add_font(&[
+				FontSource::ttf_data_with_size(FONT, 16.0),
+			]);
+		}
+	})
+	.expect("context should be configurable");
+}
 
 pub fn spawn_ui(
 	mut commands: Commands,
@@ -156,7 +187,7 @@ fn spawn_scene(
 			RenderTarget::Image(slam_camera_texture_handle.clone().into()),
 			RenderLayers::layer(0),
 			slam::SlamCamera,
-			KeyboardControl{ move_speed: 5.0, rotation_speed: 0.05, enabled: 1},
+			KeyboardControl{ move_speed: 5.0, rotation_speed: 3.0, enabled: 1},
 			Transform::from_xyz(0.0, 1.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y)
 		)
 	);
@@ -176,7 +207,7 @@ fn spawn_scene(
 			RenderTarget::Image(virtual_camera_texture_handle.clone().into()),
 			RenderLayers::layer(1),
 			slam::MapCamera,
-			KeyboardControl{ move_speed: 5.0, rotation_speed: 0.05, enabled: 0},
+			KeyboardControl{ move_speed: 5.0, rotation_speed: 3.0, enabled: 0},
 			Transform::from_xyz(0.0, 1.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y)
 		)
 	);
@@ -300,16 +331,16 @@ fn keyboard_control_system(
 		}
 		
 		if keyboard_input.pressed(KeyCode::KeyH) == true {
-			transform.rotation = Quat::from_scaled_axis(Vec3::Y * keyboard_control.rotation_speed) * transform.rotation;
+			transform.rotation = Quat::from_scaled_axis(Vec3::Y * keyboard_control.rotation_speed * fixed_time.delta_secs()) * transform.rotation;
 		}
 		if keyboard_input.pressed(KeyCode::KeyL) == true {
-			transform.rotation = Quat::from_scaled_axis(Vec3::Y * -keyboard_control.rotation_speed) * transform.rotation;
+			transform.rotation = Quat::from_scaled_axis(Vec3::Y * -keyboard_control.rotation_speed * fixed_time.delta_secs()) * transform.rotation;
 		}
 		if keyboard_input.pressed(KeyCode::KeyK) == true {
-			transform.rotation = Quat::from_scaled_axis(transform_right * keyboard_control.rotation_speed) * transform.rotation;
+			transform.rotation = Quat::from_scaled_axis(transform_right * keyboard_control.rotation_speed * fixed_time.delta_secs()) * transform.rotation;
 		}
 		if keyboard_input.pressed(KeyCode::KeyJ) == true {
-			transform.rotation = Quat::from_scaled_axis(transform_right * -keyboard_control.rotation_speed) * transform.rotation;
+			transform.rotation = Quat::from_scaled_axis(transform_right * -keyboard_control.rotation_speed * fixed_time.delta_secs()) * transform.rotation;
 		}
 		
 		
@@ -319,19 +350,19 @@ fn keyboard_control_system(
 }
 
 
-fn imgui_example_ui(mut context: NonSendMut<ImguiContext>) {
-	let ui = context.ui();
-	let window = ui.window("hello world");
-	
-	window.build(|| {
-		ui.text("hello world!");
-		ui.text("this...is...bevy_mod_imgui!");
-		ui.separator();
-		let mouse_pos = ui.io().mouse_pos;
-		ui.text(format!(
-			"mouse position: ({:.1},{:.1})",
-			mouse_pos[0], mouse_pos[1]
-		));
-	});
-	
-}
+//fn imgui_example_ui(mut context: NonSendMut<ImguiContext>) {
+	//let ui = context.ui();
+	//let window = ui.window("hello world");
+	//
+	//window.build(|| {
+		//ui.text("hello world!");
+		//ui.text("this...is...bevy_mod_imgui!");
+		//ui.separator();
+		//let mouse_pos = ui.io().mouse_pos;
+		//ui.text(format!(
+			//"mouse position: ({:.1},{:.1})",
+			//mouse_pos[0], mouse_pos[1]
+		//));
+	//});
+	//
+//}

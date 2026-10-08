@@ -2,11 +2,12 @@ use bevy::prelude::*;
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::RenderLayers;
 
+use dear_imgui_bevy::prelude::*;
+
 use bevy_prng::WyRand;
 use bevy_rand::prelude::GlobalRng;
 use rand_core::Rng;
 use bevy::math::ops::*;
-use bevy_mod_imgui::prelude::*;
 
 use crate::slam;
 
@@ -173,8 +174,6 @@ pub fn draw_slam_keyframe_projected_tracker_gizmos(mut gizmos: Gizmos<MapCameraG
 			println!("Failed to draw projected tracker, missing eigenvector");
 			continue;
 		};
-		let length = eigenvector_a.length();
-		println!("Eigenvector_a: {length}");
 		
 		eigenvector_a = slam_keyframe_transform.transform_point(eigenvector_a) - slam_keyframe_transform.translation();
 		eigenvector_b = slam_keyframe_transform.transform_point(eigenvector_b) - slam_keyframe_transform.translation();
@@ -357,8 +356,17 @@ impl Plugin for UIPlugin {
 		app.add_systems(Startup, setup_gizmo_config);
 		
 		app.insert_resource(ImguiState::default());
-		app.add_systems(Update, imgui_draw_object_list);
-		app.add_systems(Update, imgui_draw_track2d_in_object_list);
+		if let Ok(primary_pass) = app.imgui_primary_pass() {
+			if let Err(error) = app.add_imgui_systems(&primary_pass, primary_pass.system(imgui_draw_object_list)) {
+				println!("Failed to add imgui system");
+			}
+			if let Err(error) = app.add_imgui_systems(&primary_pass, primary_pass.system(imgui_draw_inspector)) {
+				println!("Failed to add imgui system");
+			}
+		}
+		else {
+			println!("Failed to get imgui primary pass");
+		}
 		
 		
 		
@@ -418,69 +426,90 @@ fn draw_gaussian_gizmo(mut gizmos: Gizmos, mut rng: Single<&mut WyRand, With<Glo
 
 #[derive(Resource)]
 struct ImguiState {
-	
-	
 	show_demo: bool,
-	demo_window_opened: bool,
-	
+	entity_in_inspector: Option<Entity>,
 }
 impl Default for ImguiState {
 	fn default() -> ImguiState {
 		return ImguiState {
 			show_demo: false,
-			demo_window_opened: true,
+			entity_in_inspector: None,
 		}
 	}
 }
 
 
-fn imgui_draw_object_list(mut context: NonSendMut<ImguiContext>) {
-	let ui = context.ui();
+fn imgui_draw_object_list (
+	frame: ImguiFrame<'_>,
+	mut imgui_state: ResMut<ImguiState>,
+	track2d_query: Query<(Entity, &slam::Track2D)>,
+	slam_keyframe_query: Query<(Entity, &slam::SlamKeyframe)>,
+	projected_tracker_query: Query<(Entity, &slam::ProjectedTracker)>,
+) {
+	
+	let ui = frame.ui();
+	
 	let window = ui.window("SLAM Objects");
 	
-	window.build(|| {
-		ui.text("hello world!");
-		ui.text("this...is...bevy_mod_imgui!");
-		ui.separator();
-		let mouse_pos = ui.io().mouse_pos;
-		ui.text(format!(
-			"mouse position: ({:.1},{:.1})",
-			mouse_pos[0], mouse_pos[1]
-		));
-	});
-	
-}
-
-fn imgui_draw_track2d_in_object_list(mut context: NonSendMut<ImguiContext>, mut imgui_state: ResMut<ImguiState>, track2d_query: Query<(Entity, &slam::Track2D)>) {
-	
-	let ui = context.ui();
-	let window = ui.window("SLAM Objects");
 	
 	window.build(|| {
 		
-		ui.checkbox("Hello", &mut imgui_state.show_demo);
-		if (imgui_state.show_demo == true) {
-			ui.show_demo_window(&mut imgui_state.demo_window_opened);
+		ui.checkbox("Show Demo", &mut imgui_state.show_demo);
+		if imgui_state.show_demo {
+			ui.show_demo_window(&mut imgui_state.show_demo);
 		}
 		
-		if let Some(_fart) = ui.tree_node("Track2D") {
-			
-			
-			for (track2d_entity, track2d_component) in track2d_query {
-				
-				//ui.text(format!("Entity: {track2d_entity}"));
-				ui.tree_node(format!("Entity: {track2d_entity}"));
-				
+		ui.separator_with_text("Track2D List");
+		for (track2d_entity, track2d_component) in track2d_query {
+			if let Some(_) = ui.tree_node(format!("Track2D: {track2d_entity}")) {
+				ui.text(format!("Viewport Position: ({0},{1})", track2d_component.viewport_position.x, track2d_component.viewport_position.y));
+				if let Some(owned_camera) = track2d_component.owned_camera {
+					ui.text(format!("Owned camera: {0}", owned_camera));
+				}
 			}
 		}
 		
 		
+		ui.separator_with_text("SLAM Keyframe List");
+		for (slam_keyframe_entity, slam_keyframe_component) in slam_keyframe_query {
+			
+			if let Some(_) = ui.tree_node(format!("SLAM Keyframe {slam_keyframe_entity}")) {
+				
+				for (projected_tracker_entity, projected_tracker_component) in projected_tracker_query {
+					if (projected_tracker_component.keyframe != slam_keyframe_entity) {continue;}
+					if let Some(_) = ui.tree_node(format!("Projected Tracker: {projected_tracker_entity}")) {
+						ui.text(format!("Owned SLAM Keyframe: {0}", projected_tracker_component.keyframe));
+						ui.text(format!("Local Pose: {0}", projected_tracker_component.local_pose));
+						ui.text(format!("Tracked 2D Pos: {0}", projected_tracker_component.tracked2d_pos));
+					}
+					
+				}
+				
+			}
+			
+		}
+		
+		
+		
+	});
+	
+}
+
+fn imgui_draw_inspector(
+	frame: ImguiFrame<'_>,
+	mut imgui_state: ResMut<ImguiState>,
+	track2d_query: Query<(Entity, &slam::Track2D)>,
+	slam_keyframe_query: Query<(Entity, &slam::SlamKeyframe)>,
+	projected_tracker_query: Query<(Entity, &slam::ProjectedTracker)>,
+) {
+	
+	let ui = frame.ui();
+	
+	ui.window("Inspector").build(|| {
+		
+		ui.text("Inspector hi");
 		
 	});
 	
 	
 }
-
-
-
-
