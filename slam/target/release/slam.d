@@ -1,1 +1,1 @@
-/home/daniel/gnss-visual-slam/slam/target/release/slam: /home/daniel/gnss-visual-slam/slam/src/main.rs
+/home/daniel/gnss-visual-slam/slam/target/release/slam: /home/daniel/gnss-visual-slam/slam/src/main.rs /home/daniel/gnss-visual-slam/slam/src/render_scene.rs /home/daniel/gnss-visual-slam/slam/src/ui.rs
