@@ -1,7 +1,7 @@
 use easy_imgui_window::{EventFlags, MainWindow, MainWindowWithRenderer, easy_imgui as imgui, glutin, winit};
 use glutin::config::Config;
 use glutin::prelude::*;
-use imgui::{Color, lbl_id};
+use imgui::Color;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -13,19 +13,25 @@ use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{ClipOrdering, Rectangle};
 use x11rb::rust_connection::RustConnection;
 use easy_imgui::WindowFlags;
-use easy_imgui_window::MainWindowRef;
+use std::rc::Rc;
+
+mod render_scene;
+mod ui;
 
 // extra pixels around each region, so resize handles and splitters stay grabbable
 const PAD: f32 = 4.0;
 
+
+
 fn main() {
+	
 	unsafe { std::env::set_var("WINIT_X11_SCALE_FACTOR", "1"); }
 	let event_loop = EventLoop::builder().with_x11().build().unwrap();
 	let (conn, _) = x11rb::connect(None).unwrap();
 
 	let mut handler = Handler {
 		window: None,
-		app: App { rects: Vec::new() },
+		app: App { gl: None, ui: None, rects: Vec::new() },
 		conn,
 		applied: Vec::new(),
 	};
@@ -51,7 +57,7 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 		return out;
 	}
 	let g = unsafe { &*ctx };
-
+	
 	for i in 0..g.Windows.Size as usize {
 		let w = unsafe { &**g.Windows.Data.add(i) };
 
@@ -73,7 +79,7 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 				continue;
 			}
 		}
-
+		
 		// docked windows: use the whole dock node (tab bar included), not just the content
 		let (pos, size) = if !w.DockNode.is_null() {
 			let node = unsafe { &*w.DockNode };
@@ -88,25 +94,28 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 	out
 }
 
-struct App {
+pub struct App {
+	gl: Option<Rc<glow::Context>>,
+	ui: Option<ui::Ui>,
 	rects: Vec<[f32; 4]>, // regions that accept input, refreshed every frame
 }
 
 impl imgui::UiBuilder for App {
-	fn do_ui(&mut self, ui: &imgui::Ui<Self>) {
-		ui.dock_space_over_viewport(
-			0,
-			ui.get_main_viewport(),
-			imgui::DockNodeFlags::PassthruCentralNode,
-			None,
-		);
-
-		ui.show_demo_window(None);
-
-		ui.window_config(lbl_id("Controls", "controls")).with(|| {
-			ui.text("Hello");
-		});
-
+	fn do_ui(&mut self, imgui: &imgui::Ui<Self>) {
+		
+		// For docking to edges of monitor
+		//imgui.dock_space_over_viewport(
+			//0,
+			//imgui.get_main_viewport(),
+			//imgui::DockNodeFlags::PassthruCentralNode,
+			//None,
+		//);
+		
+		if let Some(ui) = &mut self.ui {
+			ui.render(imgui);
+		}
+		
+		
 		// last, so every window of this frame has been submitted
 		self.rects = unsafe { collect_input_rects() };
 	}
@@ -137,7 +146,7 @@ impl ApplicationHandler for Handler {
 			if score(&b) > score(&a) { b } else { a }
 		})
 		.unwrap();
-
+		
 		let mut builder = imgui::ContextBuilder::new();
 		builder.set_ini_file_name(Some("slam_viewer.ini"));
 		
@@ -150,9 +159,9 @@ impl ApplicationHandler for Handler {
 		
 		window.renderer().set_background_color(Some(Color::TRANSPARENT));
 		window.imgui().io_mut().enable_docking(true);
+		self.app.gl = Some(window.renderer().gl_context().clone());
+		self.app.ui = Some(ui::Ui::new(window.renderer().gl_context().clone()));
 		self.window = Some(window);
-		
-		
 		
 	}
 	
@@ -162,7 +171,7 @@ impl ApplicationHandler for Handler {
 		if window.main_window().window().id() != id {
 			return;
 		}
-
+		
 		let res = window.window_event(&mut self.app, &event, EventFlags::empty());
 		if res.window_closed {
 			event_loop.exit();
@@ -184,7 +193,7 @@ impl ApplicationHandler for Handler {
 		}).collect();
 		key.sort();
 		key.dedup();
-
+		
 		if key != self.applied {
 			if let Some(xid) = x11_window_id(w) {
 				let rects: Vec<Rectangle> = key.iter().map(|k| Rectangle {
@@ -201,13 +210,13 @@ impl ApplicationHandler for Handler {
 			}
 		}
 	}
-
+	
 	fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
 		if let Some(window) = self.window.as_mut() {
 			window.new_events();
 		}
 	}
-
+	
 	fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
 		if let Some(window) = self.window.as_mut() {
 			window.about_to_wait();
