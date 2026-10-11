@@ -1,0 +1,1 @@
+clang diag: /home/daniel/gnss-visual-slam/slam/target/debug/build/easy-imgui-sys-f9e8c6daf6d1fa86/out/imgui_src/backends/imgui_impl_sdl3.h:24:9: warning: #pragma once in main file [-Wpragma-once-outside-header]
