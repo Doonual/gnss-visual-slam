@@ -1,7 +1,9 @@
 pub mod keyframe;
+pub mod pixel_tracker;
 
 use keyframe::SlamKeyframe;
 use std::rc::Rc;
+
 
 pub struct SlamState {
 	pub slam_keyframes: Vec<SlamKeyframe>

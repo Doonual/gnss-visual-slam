@@ -1,20 +1,20 @@
-use easy_imgui as imgui;
-use easy_imgui::Vector2;
 use std::fmt;
 
 
-use easy_imgui::TextureRef;
-use easy_imgui_renderer::Renderer;
 
 use glow;
 use glow::HasContext;
 use std::rc::Rc;
 
+use crate::slam::pixel_tracker;
+
 pub struct SlamKeyframe {
 	
-	image: Option<glow::Texture>,
-	image_width: u32,
-	image_height: u32,
+	pub image: Option<glow::Texture>,
+	pub image_width: u32,
+	pub image_height: u32,
+	
+	pub trackers: Vec<pixel_tracker::PixelTracker>
 	
 }
 
@@ -87,6 +87,9 @@ impl SlamKeyframe {
 				image: Some(tex),
 				image_width: w,
 				image_height: h,
+				
+				trackers: Vec::new(),
+				
 			})
 			
 			
@@ -96,38 +99,6 @@ impl SlamKeyframe {
 		
 	}
 	
-	pub fn imgui_inspect(&self, imgui: &imgui::Ui<crate::App>) {
-		
-		
-		
-		match self.image {
-			Some(texture) => {
-				let tex_id = Renderer::map_tex(texture);
-				let tex_ref = TextureRef::Id(tex_id);
-				
-				
-				let mut width = imgui.get_content_region_avail().x;
-				if width > 400.0 {
-					width = 400.0;
-				}
-				let height = width * self.image_height as f32 / self.image_width as f32;
-				
-				let border_width = 2.0;
-				
-				
-				imgui.with_push((imgui::StyleVar::FramePadding, imgui::StyleValue::Vec2(Vector2{x: 0.0, y: 0.0})), || {
-					imgui.with_push((imgui::StyleVar::FrameBorderSize, imgui::StyleValue::F32(border_width)), || {
-						imgui.image_button_config("test image".into(), tex_ref, Vector2{x: width, y: height}).uv0(Vector2{x: 0.0, y: 1.0}).uv1(Vector2{x: 1.0, y: 0.0}).build();
-					});
-				});
-				
-			},
-			None => {
-				imgui.text("Texure is fucked");
-			}
-		}
-		
-	}
 	
 }
 
