@@ -1,6 +1,13 @@
+use easy_imgui_window::{easy_imgui as imgui,};
 use glam::Mat4;
-use glow::HasContext;
+use easy_imgui::Vector2;
+use easy_imgui::TextureRef;
+use easy_imgui_renderer::Renderer;
+use glam::Vec3;
 use std::rc::Rc;
+use easy_imgui_sys;
+
+use glow::HasContext;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -18,7 +25,6 @@ in vec4 v_col; out vec4 o;
 void main() { o = v_col; }"#;
 
 pub struct Scene3D {
-	gl: Rc<glow::Context>,
 	prog: glow::Program,
 	mvp_loc: Option<glow::UniformLocation>,
 	vao: glow::VertexArray,
@@ -58,7 +64,7 @@ impl Scene3D {
 			gl.vertex_attrib_pointer_f32(1, 4, glow::FLOAT, false, stride, 12);
 			gl.bind_vertex_array(None);
 			
-			Self { gl, prog, mvp_loc, vao, vbo, fbo: None, tex: None, depth: None,
+			Self { prog, mvp_loc, vao, vbo, fbo: None, tex: None, depth: None,
 			size: (0, 0), points: vec![], lines: vec![], tris: vec![] }
 		}
 	}
@@ -76,9 +82,9 @@ impl Scene3D {
 		for p in [a, b, c3] { self.tris.push(Vertex { pos: p, col: c }); }
 	}
 	
-	fn resize(&mut self, w: i32, h: i32) {
+	fn resize(&mut self, gl: Rc<glow::Context>, w: i32, h: i32) {
 		unsafe {
-			let gl = &self.gl;
+			
 			if let Some(f) = self.fbo.take() { gl.delete_framebuffer(f); }
 			if let Some(t) = self.tex.take() { gl.delete_texture(t); }
 			if let Some(d) = self.depth.take() { gl.delete_renderbuffer(d); }
@@ -107,10 +113,13 @@ impl Scene3D {
 		}
 	}
 	
-	pub fn render(&mut self, w: i32, h: i32, mvp: Mat4) {
-		if (w, h) != self.size { self.resize(w, h); }
+	pub fn render(&mut self, gl_in: Rc<glow::Context>, w: i32, h: i32, mvp: Mat4) {
+		
+		let gl = gl_in.clone();
+		
+		if (w, h) != self.size { self.resize(gl.clone(), w, h); }
 		unsafe {
-			let gl = &self.gl;
+			
 			gl.bind_framebuffer(glow::FRAMEBUFFER, self.fbo);
 			gl.viewport(0, 0, w, h);
 			gl.clear_color(0.08, 0.08, 0.1, 1.0); // alpha 0.0 if you want it see-through
@@ -138,3 +147,87 @@ impl Scene3D {
 		self.points.clear(); self.lines.clear(); self.tris.clear();
 	}
 }
+
+
+
+pub fn render(gl: Rc<glow::Context>, imgui: &imgui::Ui<crate::App>, selected: &mut bool, scene: &mut Scene3D, vertical_fov: f32, pivot_centre: glam::Vec3, camera_rotation: &mut glam::Quat, camera_zoom: &mut f32) {
+	
+	let aspect_ratio = 1.0;
+	let near_clip_dist = 0.01;
+	let far_clip_dist = 10.0;
+	let view_matrix = glam::camera::rh::proj::opengl::perspective(vertical_fov, aspect_ratio, near_clip_dist, far_clip_dist);
+	
+	let camera_position = camera_rotation.mul_vec3(glam::Vec3{x: 0.0, y: 0.0, z: *camera_zoom}) + pivot_centre;
+	let transformation_matrix = Mat4::from_rotation_translation(*camera_rotation, camera_position).inverse();
+	
+	let avail = imgui.get_content_region_avail();
+	
+	let mut width = avail.x;
+	if width > 400.0 {
+		width = 400.0;
+	}
+	
+	scene.render(gl.clone(), width as i32, width as i32, view_matrix * transformation_matrix);
+	
+	
+	if let Some(tex_id) = scene.tex {
+		
+		let tex_id = Renderer::map_tex(tex_id);
+		let tex_ref = TextureRef::Id(tex_id);
+		
+		let mut border_width = 2.0;
+		if *selected == true {
+			border_width = 4.0;
+		}
+		
+		
+		imgui.with_push((imgui::StyleVar::FramePadding, imgui::StyleValue::Vec2(Vector2{x: 0.0, y: 0.0})), || {
+			imgui.with_push((imgui::StyleVar::FrameBorderSize, imgui::StyleValue::F32(border_width)), || {
+				imgui.image_button_config(imgui::id("Lol"), tex_ref, Vector2{x: width, y: width}).uv0(Vector2{x: 0.0, y: 1.0}).uv1(Vector2{x: 1.0, y: 0.0}).build();
+			});
+		});
+		
+		
+		if *selected == true {
+			unsafe {
+				// Dodgy, probably better to find the actual id but fuck it
+				easy_imgui_sys::ImGui_SetKeyOwner(easy_imgui_sys::ImGuiKey::ImGuiKey_MouseWheelY, 19832398 as u32 ,0);
+			}
+		}
+		
+		if imgui.io().MouseClicked[0] == true {
+			if imgui.is_item_active() == true {
+				*selected = true;
+			}
+			else {
+				*selected = false;
+			}
+		}
+		
+		if *selected == true {
+			// Zoom
+			*camera_zoom = *camera_zoom * f32::exp(imgui.io().MouseWheel * -0.1);
+		}
+		if *selected == true {
+			
+			
+			if imgui.io().MouseDown[0] == true {
+				
+				// Rotation
+				*camera_rotation = *camera_rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, imgui.io().MouseDelta.y * -0.01, imgui.io().MouseDelta.x * -0.01, 0.0);
+				let right_vec = camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
+				let flat_right_vec = Vec3{x: right_vec.x, y: 0.0, z: right_vec.z}.normalize();
+				*camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * *camera_rotation;
+				
+				
+			}
+			
+		}
+		
+	}
+	else {
+		eprintln!("Render texture missing");
+	}
+	
+}
+

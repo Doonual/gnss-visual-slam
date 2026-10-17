@@ -15,8 +15,10 @@ use x11rb::rust_connection::RustConnection;
 use easy_imgui::WindowFlags;
 use std::rc::Rc;
 
-mod render_scene;
+mod slam;
 mod ui;
+
+
 
 // extra pixels around each region, so resize handles and splitters stay grabbable
 const PAD: f32 = 4.0;
@@ -28,10 +30,15 @@ fn main() {
 	unsafe { std::env::set_var("WINIT_X11_SCALE_FACTOR", "1"); }
 	let event_loop = EventLoop::builder().with_x11().build().unwrap();
 	let (conn, _) = x11rb::connect(None).unwrap();
-
+	
 	let mut handler = Handler {
 		window: None,
-		app: App { gl: None, ui: None, rects: Vec::new() },
+		app: App {
+			gl: None,
+			slam_state: None,
+			ui: None,
+			rects: Vec::new(),
+		},
 		conn,
 		applied: Vec::new(),
 	};
@@ -60,7 +67,7 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 	
 	for i in 0..g.Windows.Size as usize {
 		let w = unsafe { &**g.Windows.Data.add(i) };
-
+		
 		if !(w.Active || w.WasActive) || w.Hidden {
 			continue;
 		}
@@ -96,6 +103,7 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 
 pub struct App {
 	gl: Option<Rc<glow::Context>>,
+	slam_state: Option<slam::SlamState>,
 	ui: Option<ui::Ui>,
 	rects: Vec<[f32; 4]>, // regions that accept input, refreshed every frame
 }
@@ -112,9 +120,12 @@ impl imgui::UiBuilder for App {
 		//);
 		
 		if let Some(ui) = &mut self.ui {
-			ui.render(imgui);
+			if let Some(gl) = self.gl.clone() {
+				if let Some(slam_state) = &mut self.slam_state {
+					ui.render(gl, imgui, slam_state);
+				}
+			}
 		}
-		
 		
 		// last, so every window of this frame has been submitted
 		self.rects = unsafe { collect_input_rects() };
@@ -148,7 +159,7 @@ impl ApplicationHandler for Handler {
 		.unwrap();
 		
 		let mut builder = imgui::ContextBuilder::new();
-		builder.set_ini_file_name(Some("slam_viewer.ini"));
+		builder.set_ini_file_name(Some("imgui_persistent_state.ini"));
 		
 		let mut window = MainWindowWithRenderer::with_builder(main_window, &builder);
 		
@@ -160,8 +171,15 @@ impl ApplicationHandler for Handler {
 		window.renderer().set_background_color(Some(Color::TRANSPARENT));
 		window.imgui().io_mut().enable_docking(true);
 		self.app.gl = Some(window.renderer().gl_context().clone());
+		self.app.slam_state = Some(slam::SlamState::init(window.renderer().gl_context().clone()));
 		self.app.ui = Some(ui::Ui::new(window.renderer().gl_context().clone()));
 		self.window = Some(window);
+		
+		
+		
+		
+		
+		
 		
 	}
 	

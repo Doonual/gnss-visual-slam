@@ -1,4 +1,5 @@
 /slam_test/target/*
 /slam/target/*
+/slam/imgui_persistent_state.ini
 
 */Cargo.lock
