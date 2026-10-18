@@ -1,9 +1,11 @@
 pub mod keyframe;
 pub mod pixel_tracker;
+pub mod camera;
 
 use keyframe::SlamKeyframe;
 use std::rc::Rc;
 
+use easy_imgui as imgui;
 
 pub struct SlamState {
 	pub slam_keyframes: Vec<SlamKeyframe>
@@ -37,6 +39,5 @@ impl SlamState {
 	
 	
 }
-
 
 
