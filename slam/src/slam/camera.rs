@@ -86,7 +86,7 @@ impl ui::ImguiInspect for SlamCamera {
 }
 
 impl ui::scene::DrawSceneGizmo for SlamCamera {
-	fn draw_scene_gizmo(&self, scene: &mut ui::scene::Scene3D) {
+	fn draw_scene_gizmo(&mut self, scene: &mut ui::scene::Scene3D) {
 		
 		let right = self.rotation.mul_vec3(Vec3::X);
 		let up = self.rotation.mul_vec3(Vec3::Y);

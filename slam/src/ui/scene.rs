@@ -237,7 +237,7 @@ impl Scene3D {
 }
 
 pub trait DrawSceneGizmo {
-	fn draw_scene_gizmo(&self, scene: &mut Scene3D);
+	fn draw_scene_gizmo(&mut self, scene: &mut Scene3D);
 }
 
 

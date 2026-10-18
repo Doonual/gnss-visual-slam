@@ -215,7 +215,9 @@ impl ui::ImguiInspect for SlamKeyframe {
 			imgui.with_disabled(self.trackers.len() == 0, || {
 				if imgui.button_config("Delete selected tracker".into()).size(imgui::vec2(-1.0, 0.0)).build() == true {
 					self.trackers.remove(ui_state.tracker_index_selected);
-					ui_state.tracker_index_selected = usize::clamp(0, ui_state.tracker_index_selected, self.trackers.len() - 1);
+					if ui_state.tracker_index_selected >= self.trackers.len() {
+						ui_state.tracker_index_selected = self.trackers.len() - 1;
+					}
 				}
 			});
 			
@@ -258,7 +260,7 @@ impl ui::ImguiInspect for SlamKeyframe {
 }
 
 impl DrawSceneGizmo for SlamKeyframe {
-	fn draw_scene_gizmo(&self, scene: &mut Scene3D) {
+	fn draw_scene_gizmo(&mut self, scene: &mut Scene3D) {
 		
 		self.slam_camera.draw_scene_gizmo(scene);
 		

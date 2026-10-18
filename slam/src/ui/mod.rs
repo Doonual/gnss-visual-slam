@@ -16,6 +16,10 @@ pub struct Ui {
 	scene: scene::Scene3D,
 	scene_state: scene::SceneImguiState,
 	
+	optimise_camera_index: i32,
+	optimise_rate: f32,
+	optimise_on: bool,
+	
 	slam_keyframe_ui_state: slam::keyframe::SlamKeyframeUiState,
 	
 	show_demo: bool,
@@ -33,6 +37,10 @@ impl Ui {
 			
 			scene: scene::Scene3D::new(gl),
 			scene_state: scene::SceneImguiState::default(),
+			
+			optimise_camera_index: 0,
+			optimise_rate: 0.01,
+			optimise_on: false,
 			
 			slam_keyframe_ui_state: slam::keyframe::SlamKeyframeUiState::default(),
 			
@@ -74,20 +82,17 @@ impl Ui {
 		
 		imgui.window_config("Scene".into()).with(|| {
 			
-			let dim = 5;
-			let scale = 10.0;
-			for x in -dim..dim+1 {
-				let val = (x as f32) / dim as f32;
-				
-				self.scene.line(glam::vec3(val, 0.0, -1.0) * scale, glam::vec3(val, 0.0, 1.0) * scale, 200, 200, 200, 80);
-				self.scene.line(glam::vec3(-1.0, 0.0, val) * scale, glam::vec3(1.0, 0.0, val) * scale, 200, 200, 200, 80);
-			}
-			
-			for slam_keyrame in &mut slam_state.slam_keyframes {
-				slam_keyrame.draw_scene_gizmo(&mut self.scene);
-			}
-			
+			slam_state.draw_scene_gizmo(&mut self.scene);
 			self.scene.draw_imgui_inspector(&mut self.scene_state, imgui, gl.clone());
+			
+			imgui.input_int_config("Optimise camera index".into(), &mut self.optimise_camera_index).build();
+			imgui.input_float_config("Optimise rate".into(), &mut self.optimise_rate).build();
+			
+			imgui.checkbox("Optimise camera".into(), &mut self.optimise_on);
+			if self.optimise_on == true {
+				slam_state.optimise_keyframe(self.optimise_camera_index, self.optimise_rate);
+			}
+			
 			
 		});
 		
