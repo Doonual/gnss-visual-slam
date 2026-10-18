@@ -72,15 +72,17 @@ impl Scene3D {
 	
 	// --- immediate-mode API: call these every frame ---
 	#[allow(dead_code)]
-	pub fn point(&mut self, p: [f32; 3], c: [f32; 4]) { self.points.push(Vertex { pos: p, col: c }); }
-	#[allow(dead_code)]
-	pub fn line(&mut self, a: [f32; 3], b: [f32; 3], c: [f32; 4]) {
-		self.lines.push(Vertex { pos: a, col: c });
-		self.lines.push(Vertex { pos: b, col: c });
+	pub fn point(&mut self, point: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
+		self.points.push(Vertex { pos: [point.x, point.y, point.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
 	}
 	#[allow(dead_code)]
-	pub fn tri(&mut self, a: [f32; 3], b: [f32; 3], c3: [f32; 3], c: [f32; 4]) {
-		for p in [a, b, c3] { self.tris.push(Vertex { pos: p, col: c }); }
+	pub fn line(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
+		self.lines.push(Vertex { pos: [point_a.x, point_a.y, point_a.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
+		self.lines.push(Vertex { pos: [point_b.x, point_b.y, point_b.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
+	}
+	#[allow(dead_code)]
+	pub fn tri(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, point_c: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
+		for p in [[point_a.x, point_a.y, point_a.z], [point_b.x, point_b.y, point_b.z], [point_c.x, point_c.y, point_c.z]] { self.tris.push(Vertex { pos: p, col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] }); }
 	}
 	
 	fn resize(&mut self, gl: Rc<glow::Context>, w: i32, h: i32) {
@@ -155,16 +157,16 @@ impl Scene3D {
 		let aspect_ratio = 1.0;
 		let near_clip_dist = 0.001;
 		let far_clip_dist = 100.0;
-		let view_matrix = glam::camera::rh::proj::opengl::perspective(vertical_fov, aspect_ratio, near_clip_dist, far_clip_dist);
+		let view_matrix = glam::camera::lh::proj::opengl::perspective(vertical_fov, aspect_ratio, near_clip_dist, far_clip_dist);
 		
-		let camera_position = camera_rotation.mul_vec3(glam::Vec3{x: 0.0, y: 0.0, z: *camera_zoom}) + pivot_centre;
+		let camera_position = camera_rotation.mul_vec3(glam::Vec3{x: 0.0, y: 0.0, z: -*camera_zoom}) + pivot_centre;
 		let transformation_matrix = Mat4::from_rotation_translation(*camera_rotation, camera_position).inverse();
 		
 		let avail = imgui.get_content_region_avail();
 		
 		let mut width = avail.x - 1.0;
 		if width > 400.0 {
-			width = 400.0;
+			//width = 400.0;
 		}
 		
 		
@@ -215,7 +217,7 @@ impl Scene3D {
 				if imgui.io().MouseDown[0] == true {
 					
 					// Rotation
-					*camera_rotation = *camera_rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, imgui.io().MouseDelta.y * -0.01, imgui.io().MouseDelta.x * -0.01, 0.0);
+					*camera_rotation = *camera_rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, imgui.io().MouseDelta.y * 0.01, imgui.io().MouseDelta.x * 0.01, 0.0);
 					let right_vec = camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
 					let flat_right_vec = Vec3{x: right_vec.x, y: 0.0, z: right_vec.z}.normalize();
 					*camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * *camera_rotation;
@@ -234,6 +236,12 @@ impl Scene3D {
 	
 }
 
+pub trait DrawSceneGizmo {
+	fn draw_scene_gizmo(&self, scene: &mut Scene3D);
+}
+
+
+
 pub struct SceneImguiState {
 	pub has_focus: bool,
 	pub vertical_fov: f32,
@@ -244,12 +252,19 @@ pub struct SceneImguiState {
 
 impl Default for SceneImguiState {
 	fn default() -> Self {
+		
+		
+		let mut camera_rotation = glam::Quat::from_rotation_arc(glam::Vec3::Z, glam::Vec3{x: 0.5, y: -0.2, z: 0.5}.normalize());
+		let right_vec = camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
+		let flat_right_vec = Vec3{x: right_vec.x, y: 0.0, z: right_vec.z}.normalize();
+		camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * camera_rotation;
+		
 		SceneImguiState {
 			has_focus: false,
 			vertical_fov: 45.0,
 			pivot_centre: glam::Vec3::ZERO,
-			camera_rotation: glam::Quat::IDENTITY,
-			camera_zoom: 3.0,
+			camera_rotation: camera_rotation,
+			camera_zoom: 20.0,
 		}
 	}
 }
@@ -258,22 +273,22 @@ impl Default for SceneImguiState {
 
 impl ui::ImguiInspect for Scene3D {
 	
-	type UiState = SceneImguiState;
+	type ImguiState = SceneImguiState;
 	
-	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::UiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
+	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
 		
-		imgui.table_config("Test table".into(), 2).with(|| {
+		//imgui.table_config("Test table".into(), 2).with(|| {
 			
-			imgui.table_next_row(easy_imgui::TableRowFlags::None, 0.0);
-			imgui.table_next_column();
+			//imgui.table_next_row(easy_imgui::TableRowFlags::None, 0.0);
+			//imgui.table_next_column();
 			
-			let avail = imgui.get_content_region_avail();
+			//let avail = imgui.get_content_region_avail();
 			
 			
 			//imgui.set_next_item_width(avail.x);
-			imgui.text("Hi from column 1");
+			//imgui.text("Hi from column 1");
 			
-			imgui.table_next_column();
+			//imgui.table_next_column();
 			
 			
 			
@@ -284,9 +299,9 @@ impl ui::ImguiInspect for Scene3D {
 			self.imgui_draw_scene_only(gl, imgui, &mut ui_state.has_focus, ui_state.vertical_fov, ui_state.pivot_centre, &mut ui_state.camera_rotation, &mut ui_state.camera_zoom);
 			
 			
-			imgui.table_next_column();
+			//imgui.table_next_column();
 			
-		});
+		//});
 		
 		
 	}

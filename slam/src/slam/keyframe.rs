@@ -1,7 +1,10 @@
 use std::fmt;
+use easy_imgui as imgui;
 use easy_imgui::TextureRef;
 use easy_imgui_renderer::Renderer;
 use imgui::Vector2;
+
+use glam::{Vec2, Vec3, Quat, Mat4};
 
 
 
@@ -10,11 +13,13 @@ use glow::HasContext;
 use std::rc::Rc;
 
 
+
 use crate::slam::pixel_tracker::PixelTracker;
 use crate::slam::camera::SlamCamera;
 use crate::ui;
+use crate::ui::scene::DrawSceneGizmo;
+use crate::ui::scene::Scene3D;
 
-use easy_imgui as imgui;
 
 pub struct SlamKeyframe {
 	
@@ -177,9 +182,9 @@ pub struct SlamKeyframeUiState {
 
 impl ui::ImguiInspect for SlamKeyframe {
 	
-	type UiState = SlamKeyframeUiState;
+	type ImguiState = SlamKeyframeUiState;
 	
-	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::UiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
+	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
 		
 		let id = self as *const Self as usize;
 		imgui.table_config("Test table".into(), 2).with(|| {
@@ -195,6 +200,10 @@ impl ui::ImguiInspect for SlamKeyframe {
 			// ###########################################
 			
 			let avail = imgui.get_content_region_avail();
+			
+			imgui.separator_text("Camera info");
+			self.slam_camera.draw_imgui_inspector(&mut (), imgui, gl.clone());
+			
 			
 			imgui.separator_text("Trackers");
 			
@@ -248,3 +257,39 @@ impl ui::ImguiInspect for SlamKeyframe {
 	
 }
 
+impl DrawSceneGizmo for SlamKeyframe {
+	fn draw_scene_gizmo(&self, scene: &mut Scene3D) {
+		
+		self.slam_camera.draw_scene_gizmo(scene);
+		
+		for tracker in &self.trackers {
+			
+			//let top_left = Vec3::Z * dist + Vec3::Y * 0.5 + Vec3::X * self.slam_camera.get_aspect_ratio() * 0.5;
+			//let right_vec = Vec3::X * 
+			
+			
+			let projected_tracker = self.slam_camera.project_tracker(&tracker);
+			
+			let dist = self.slam_camera.get_view_dist() / self.slam_camera.rotation.inverse().mul_vec3(projected_tracker).z;
+			
+			let cross_size = 0.03;
+			
+			scene.line(self.slam_camera.position, self.slam_camera.position + projected_tracker * dist, 255, 0, 0, 100);
+			scene.line(self.slam_camera.position + projected_tracker * dist, self.slam_camera.position + projected_tracker * 10.0, 255, 0, 0, 255);
+			
+			let right = self.slam_camera.rotation.mul_vec3(Vec3::X);
+			let up = self.slam_camera.rotation.mul_vec3(Vec3::Y);
+			let forward = self.slam_camera.rotation.mul_vec3(Vec3::Z);
+			let view_dist = self.slam_camera.get_view_dist();
+			
+			let scaled_uv = (tracker.uv_position - Vec2{x: 0.5, y: 0.5}) * Vec2{x: self.slam_camera.get_aspect_ratio(), y: 1.0};
+			let screen_pos = right * scaled_uv.x - up * scaled_uv.y;
+			
+			scene.line(self.slam_camera.position + screen_pos + forward * view_dist + (right + up) * cross_size, self.slam_camera.position + screen_pos + forward * view_dist - (right + up) * cross_size, 255, 0, 0, 255);
+			scene.line(self.slam_camera.position + screen_pos + forward * view_dist + (right - up) * cross_size, self.slam_camera.position + screen_pos + forward * view_dist - (right - up) * cross_size, 255, 0, 0, 255);
+			
+			
+		}
+		
+	}
+}

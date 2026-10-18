@@ -5,9 +5,10 @@ use easy_imgui_renderer::Renderer;
 use std::rc::Rc;
 use glam;
 
-mod scene;
+pub mod scene;
 
 use crate::slam;
+use scene::DrawSceneGizmo;
 
 
 pub struct Ui {
@@ -73,11 +74,17 @@ impl Ui {
 		
 		imgui.window_config("Scene".into()).with(|| {
 			
-			let dim = 15;
+			let dim = 5;
+			let scale = 10.0;
 			for x in -dim..dim+1 {
-				let x_pos = (x as f32) / dim as f32;
-				self.scene.line([x_pos, 0.0, -1.0], [x_pos, 0.0, 1.0], [0.8, 0.8, 0.8, 1.0]);
-				self.scene.line([-1.0, 0.0, x_pos], [1.0, 0.0, x_pos], [0.8, 0.8, 0.8, 1.0]);
+				let val = (x as f32) / dim as f32;
+				
+				self.scene.line(glam::vec3(val, 0.0, -1.0) * scale, glam::vec3(val, 0.0, 1.0) * scale, 200, 200, 200, 80);
+				self.scene.line(glam::vec3(-1.0, 0.0, val) * scale, glam::vec3(1.0, 0.0, val) * scale, 200, 200, 200, 80);
+			}
+			
+			for slam_keyrame in &mut slam_state.slam_keyframes {
+				slam_keyrame.draw_scene_gizmo(&mut self.scene);
 			}
 			
 			self.scene.draw_imgui_inspector(&mut self.scene_state, imgui, gl.clone());
@@ -92,7 +99,7 @@ impl Ui {
 
 pub trait ImguiInspect {
 	
-	type UiState: Default;
-	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::UiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>);
+	type ImguiState: Default;
+	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>);
 }
 

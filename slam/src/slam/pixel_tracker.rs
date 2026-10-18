@@ -33,9 +33,9 @@ impl PixelTracker {
 
 impl ui::ImguiInspect for PixelTracker {
 	
-	type UiState = ();
+	type ImguiState = ();
 	
-	fn draw_imgui_inspector(&mut self, ui_state_: &mut Self::UiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
+	fn draw_imgui_inspector(&mut self, ui_state_: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
 		
 		let mut pos_arr = self.uv_position.to_array();
 		imgui.drag_float_2_config("Position (UV)".into(), &mut pos_arr).speed(0.001).build();
