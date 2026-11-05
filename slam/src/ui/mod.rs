@@ -1,110 +1,100 @@
 use easy_imgui_window::{easy_imgui as imgui,};
-use easy_imgui::Vector2;
-use easy_imgui::TextureRef;
-use easy_imgui_renderer::Renderer;
-use std::rc::Rc;
-use glam;
+use image::ImageFormat;
+use json::JsonValue;
+use crate::{file::{DecodeJsonError, Saveable}, slam::{self, SlamState, SlamStateGizmoState, keyframe::SlamKeyframeSource}, ui::{images_window::ImagesWindow, scene_window::SceneWindow}};
 
-pub mod scene;
-
-use crate::slam;
-use scene::DrawSceneGizmo;
-
-
-pub struct Ui {
-	
-	scene: scene::Scene3D,
-	scene_state: scene::SceneImguiState,
-	
-	optimise_camera_index: i32,
-	optimise_rate: f32,
-	optimise_on: bool,
-	
-	slam_keyframe_ui_state: slam::keyframe::SlamKeyframeUiState,
-	
-	show_demo: bool,
-	label_image_index: i32,
-	
-}
-
-
-
-impl Ui {
-	pub fn new(gl: Rc<glow::Context>) -> Self {
-		
-		Ui {
-			
-			
-			scene: scene::Scene3D::new(gl),
-			scene_state: scene::SceneImguiState::default(),
-			
-			optimise_camera_index: 0,
-			optimise_rate: 0.01,
-			optimise_on: false,
-			
-			slam_keyframe_ui_state: slam::keyframe::SlamKeyframeUiState::default(),
-			
-			show_demo: false,
-			label_image_index: 0,
-		}
-	}
-	
-	pub fn render(&mut self, gl: Rc<glow::Context>, imgui: &imgui::Ui<crate::App>, slam_state: &mut slam::SlamState) {
-		
-		
-		imgui.window_config("Images".into()).with(|| {
-			
-			let mut float_workaround = self.label_image_index as f32;
-			let image_index_changed = imgui.slider_float_config("Image index".into(), &mut float_workaround).range(0.0, slam_state.slam_keyframes.len() as f32 - 1.0).display_format(easy_imgui::FloatFormat::F(0)).build();
-			self.label_image_index = float_workaround as i32;
-			if image_index_changed == true {
-				self.slam_keyframe_ui_state = slam::keyframe::SlamKeyframeUiState::default();
-			}
-			
-			
-			if let Some(slam_keyframe) = slam_state.slam_keyframes.get_mut(self.label_image_index as usize) {
-				
-				let id = self as *const Self as usize;
-				imgui.child_config(format!("keyframe_inspector_{0}", id).into()).size(imgui::vec2(-1.0, 0.0)).child_flags(imgui::ChildFlags::Borders | imgui::ChildFlags::AutoResizeY).with(|| {
-					slam_keyframe.draw_imgui_inspector(&mut self.slam_keyframe_ui_state, imgui, gl.clone());
-				});
-			};
-			
-			
-			imgui.checkbox("Show ImGui Demo".into(), &mut self.show_demo);
-			if self.show_demo == true {
-				imgui.show_demo_window(Some(&mut self.show_demo));
-			}
-			
-			
-		});
-		
-		
-		imgui.window_config("Scene".into()).with(|| {
-			
-			slam_state.draw_scene_gizmo(&mut self.scene);
-			self.scene.draw_imgui_inspector(&mut self.scene_state, imgui, gl.clone());
-			
-			imgui.input_int_config("Optimise camera index".into(), &mut self.optimise_camera_index).build();
-			imgui.input_float_config("Optimise rate".into(), &mut self.optimise_rate).build();
-			
-			imgui.checkbox("Optimise camera".into(), &mut self.optimise_on);
-			if self.optimise_on == true {
-				slam_state.optimise_keyframe(self.optimise_camera_index, self.optimise_rate);
-			}
-			
-			
-		});
-		
-		
-	}
-	
-}
+pub mod scene_window;
+pub mod images_window;
+pub mod solver_panel;
 
 
 pub trait ImguiInspect {
-	
 	type ImguiState: Default;
-	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>);
+	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>);
+}
+
+
+#[derive(Default)]
+pub struct UiRoot {
+	
+	pub slam_state: SlamState,
+	slam_state_gizmo_state: SlamStateGizmoState,
+	//slam_state_ui_state: SlamStateUiState,
+	
+	images_window: ImagesWindow,
+	scene_window: SceneWindow,
+	
+}
+
+
+impl UiRoot {
+	
+	pub fn render(&mut self, imgui: &imgui::Ui<crate::App>) {
+		
+		
+		imgui.window_config("Images".into()).with(|| {
+			self.images_window.imgui_draw_images_window(&mut self.slam_state, imgui);
+		});
+		imgui.window_config("Scene".into()).with(|| {
+			self.scene_window.imgui_draw_scene_window(&mut self.slam_state, imgui);
+		});
+		
+		
+	}
+	
+}
+
+impl Saveable for UiRoot {
+	
+	fn to_json(&self) -> json::JsonValue {
+		
+		let mut json_obj = JsonValue::new_object();
+		json_obj["slam state"] = self.slam_state.to_json();
+		json_obj["slam gizmo state"] = self.slam_state_gizmo_state.to_json();
+		json_obj["images window"] = self.images_window.to_json();
+		json_obj["scene window"] = self.scene_window.to_json();
+		json_obj
+		
+	}
+	
+	fn from_json(json_value: &JsonValue) -> Result<Self, DecodeJsonError> {
+		
+		
+		let slam_state = SlamState::from_json(&json_value["slam state"])?;
+		let slam_state_gizmo_state = SlamStateGizmoState::from_json(&json_value["slam gizmo state"])?;
+		let images_window = ImagesWindow::from_json(&json_value["images window"])?;
+		let scene_window = SceneWindow::from_json(&json_value["scene window"])?;
+		
+		Ok(Self {
+			slam_state,
+			slam_state_gizmo_state,
+			images_window,
+			scene_window,
+		})
+		
+		
+	}
+	
+	fn from_json_or_default(json_value: &JsonValue) -> Self {
+		let slam_state = SlamState::from_json_or_default(&json_value["slam state"]);
+		let slam_state_gizmo_state = SlamStateGizmoState::from_json_or_default(&json_value["slam gizmo state"]);
+		let images_window = ImagesWindow::from_json_or_default(&json_value["images window"]);
+		let scene_window = SceneWindow::from_json_or_default(&json_value["scene window"]);
+		
+		Self {
+			slam_state,
+			slam_state_gizmo_state,
+			images_window,
+			scene_window,
+		}
+	}
+}
+
+
+pub fn image_extensions() -> Vec<&'static str> {
+	ImageFormat::all()
+	.filter(|f| f.reading_enabled())   // only formats compiled in via cargo features
+	.flat_map(|f| f.extensions_str().iter().copied())
+	.collect()
 }
 

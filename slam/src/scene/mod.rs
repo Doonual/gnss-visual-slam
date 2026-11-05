@@ -3,12 +3,19 @@ use glam::Mat4;
 use easy_imgui::Vector2;
 use easy_imgui::TextureRef;
 use easy_imgui_renderer::Renderer;
+use glam::Quat;
 use glam::Vec3;
+use json::JsonValue;
+use core::f32;
 use std::rc::Rc;
 use easy_imgui_sys;
 
 use glow::HasContext;
+use crate::file::DecodeJsonError;
+use crate::file::Saveable;
 use crate::ui;
+
+pub mod slam_gizmos;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -39,8 +46,11 @@ pub struct Scene3D {
 	tris: Vec<Vertex>,
 }
 
-impl Scene3D {
-	pub fn new(gl: Rc<glow::Context>) -> Self {
+impl Default for Scene3D {
+	fn default() -> Self {
+		
+		let gl = crate::gl();
+		
 		unsafe {
 			let prog = gl.create_program().unwrap();
 			for (ty, src) in [(glow::VERTEX_SHADER, VS), (glow::FRAGMENT_SHADER, FS)] {
@@ -69,21 +79,58 @@ impl Scene3D {
 			size: (0, 0), points: vec![], lines: vec![], tris: vec![] }
 		}
 	}
+}
+
+impl Scene3D {
 	
 	// --- immediate-mode API: call these every frame ---
 	#[allow(dead_code)]
-	pub fn point(&mut self, point: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
-		self.points.push(Vertex { pos: [point.x, point.y, point.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
+	pub fn point(&mut self, point: glam::Vec3, col: [u8; 4]) {
+		self.points.push(Vertex { pos: [point.x, point.y, point.z], col: [col[0] as f32 / 255.0, col[1] as f32 / 255.0, col[2] as f32 / 255.0, col[3] as f32 / 255.0] });
 	}
 	#[allow(dead_code)]
-	pub fn line(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
-		self.lines.push(Vertex { pos: [point_a.x, point_a.y, point_a.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
-		self.lines.push(Vertex { pos: [point_b.x, point_b.y, point_b.z], col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] });
+	pub fn line(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, col: [u8; 4]) {
+		self.lines.push(Vertex { pos: [point_a.x, point_a.y, point_a.z], col: [col[0] as f32 / 255.0, col[1] as f32 / 255.0, col[2] as f32 / 255.0, col[3] as f32 / 255.0] });
+		self.lines.push(Vertex { pos: [point_b.x, point_b.y, point_b.z], col: [col[0] as f32 / 255.0, col[1] as f32 / 255.0, col[2] as f32 / 255.0, col[3] as f32 / 255.0] });
 	}
 	#[allow(dead_code)]
-	pub fn tri(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, point_c: glam::Vec3, r: u8, g: u8, b: u8, a: u8) {
-		for p in [[point_a.x, point_a.y, point_a.z], [point_b.x, point_b.y, point_b.z], [point_c.x, point_c.y, point_c.z]] { self.tris.push(Vertex { pos: p, col: [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0] }); }
+	pub fn tri(&mut self, point_a: glam::Vec3, point_b: glam::Vec3, point_c: glam::Vec3, col: [u8; 4]) {
+		for p in [[point_a.x, point_a.y, point_a.z], [point_b.x, point_b.y, point_b.z], [point_c.x, point_c.y, point_c.z]] { self.tris.push(Vertex { pos: p, col: [col[0] as f32 / 255.0, col[1] as f32 / 255.0, col[2] as f32 / 255.0, col[3] as f32 / 255.0] }); }
 	}
+	
+	#[allow(dead_code)]
+	pub fn circle(&mut self, centre: glam::Vec3, rotation: glam::Quat, radius: f32, col: [u8; 4]) {
+		
+		let right_vec = rotation * Vec3::X;
+		let up_vec = rotation * Vec3::Y;
+		
+		let circle_res = 32;
+		
+		for i in 0..circle_res {
+			
+			let angle = (i as f32 / circle_res as f32) * f32::consts::PI * 2.0;
+			let next_angle = ((i + 1) as f32 / circle_res as f32) * f32::consts::PI * 2.0;
+			
+			let pos_a = centre + f32::cos(angle) * right_vec * radius + f32::sin(angle) * up_vec * radius;
+			let pos_b = centre + f32::cos(next_angle) * right_vec * radius + f32::sin(next_angle) * up_vec * radius;
+			
+			self.line(pos_a, pos_b, col);
+			
+		}
+		
+	}
+	
+	#[allow(dead_code)]
+	pub fn sphere(&mut self, centre: glam::Vec3, rotation: glam::Quat, radius: f32, col: [u8; 4]) {
+		
+		self.circle(centre, rotation, radius, col);
+		self.circle(centre, rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, f32::consts::PI / 2.0, 0.0, 0.0), radius, col);
+		self.circle(centre, rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::consts::PI / 2.0, 0.0), radius, col);
+		
+	}
+	
+	
+	
 	
 	fn resize(&mut self, gl: Rc<glow::Context>, w: i32, h: i32) {
 		unsafe {
@@ -116,9 +163,9 @@ impl Scene3D {
 		}
 	}
 	
-	pub fn render(&mut self, gl_in: Rc<glow::Context>, w: i32, h: i32, mvp: Mat4) {
+	pub fn render(&mut self, w: i32, h: i32, mvp: Mat4) {
 		
-		let gl = gl_in.clone();
+		let gl = crate::gl();
 		
 		if (w, h) != self.size { self.resize(gl.clone(), w, h); }
 		unsafe {
@@ -150,27 +197,22 @@ impl Scene3D {
 		self.points.clear(); self.lines.clear(); self.tris.clear();
 	}
 	
-	
-	
-	pub fn imgui_draw_scene_only(&mut self, gl: Rc<glow::Context>, imgui: &imgui::Ui<crate::App>, selected: &mut bool, vertical_fov: f32, pivot_centre: glam::Vec3, camera_rotation: &mut glam::Quat, camera_zoom: &mut f32) {
+	pub fn imgui_draw_scene_only(&mut self, ui_state: &mut SceneInspectState, imgui: &imgui::Ui<crate::App>) {
 		
 		let aspect_ratio = 1.0;
-		let near_clip_dist = 0.001;
+		let near_clip_dist = 0.1;
 		let far_clip_dist = 100.0;
-		let view_matrix = glam::camera::lh::proj::opengl::perspective(vertical_fov, aspect_ratio, near_clip_dist, far_clip_dist);
+		let view_matrix = glam::camera::lh::proj::opengl::perspective(ui_state.vertical_fov, aspect_ratio, near_clip_dist, far_clip_dist);
 		
-		let camera_position = camera_rotation.mul_vec3(glam::Vec3{x: 0.0, y: 0.0, z: -*camera_zoom}) + pivot_centre;
-		let transformation_matrix = Mat4::from_rotation_translation(*camera_rotation, camera_position).inverse();
+		let camera_position = ui_state.camera_rotation.mul_vec3(glam::Vec3{x: 0.0, y: 0.0, z: -ui_state.camera_zoom}) + ui_state.pivot_centre;
+		let transformation_matrix = Mat4::from_rotation_translation(ui_state.camera_rotation, camera_position).inverse();
+		
 		
 		let avail = imgui.get_content_region_avail();
 		
-		let mut width = avail.x - 1.0;
-		if width > 400.0 {
-			//width = 400.0;
-		}
+		let width = avail.x - 1.0;
 		
-		
-		self.render(gl.clone(), width as i32, width as i32, view_matrix * transformation_matrix);
+		self.render(width as i32, width as i32, view_matrix * transformation_matrix);
 		
 		
 		if let Some(tex_id) = self.tex {
@@ -179,7 +221,7 @@ impl Scene3D {
 			let tex_ref = TextureRef::Id(tex_id);
 			
 			let mut border_width = 2.0;
-			if *selected == true {
+			if ui_state.has_focus {
 				border_width = 4.0;
 			}
 			
@@ -191,38 +233,40 @@ impl Scene3D {
 			});
 			
 			
-			if *selected == true {
+			if ui_state.has_focus {
 				unsafe {
 					// Dodgy, probably better to find the actual id but fuck it
-					easy_imgui_sys::ImGui_SetKeyOwner(easy_imgui_sys::ImGuiKey::ImGuiKey_MouseWheelY, 19832398 as u32 ,0);
+					easy_imgui_sys::ImGui_SetKeyOwner(easy_imgui_sys::ImGuiKey::ImGuiKey_MouseWheelY, 19832398 ,0);
 				}
 			}
 			
-			if imgui.io().MouseClicked[0] == true {
-				if imgui.is_item_active() == true {
-					*selected = true;
-				}
-				else {
-					*selected = false;
-				}
+			if imgui.io().MouseClicked[0] {
+				ui_state.has_focus = imgui.is_item_active();
 			}
 			
-			if *selected == true {
+			if ui_state.has_focus {
 				// Zoom
-				*camera_zoom = *camera_zoom * f32::exp(imgui.io().MouseWheel * -0.1);
+				ui_state.camera_zoom *= f32::exp(imgui.io().MouseWheel * -0.1);
 			}
-			if *selected == true {
+			if ui_state.has_focus {
 				
 				
-				if imgui.io().MouseDown[0] == true {
+				if imgui.io().MouseDown[0] {
 					
 					// Rotation
-					*camera_rotation = *camera_rotation * glam::Quat::from_euler(glam::EulerRot::XYZ, imgui.io().MouseDelta.y * 0.01, imgui.io().MouseDelta.x * 0.01, 0.0);
-					let right_vec = camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
+					ui_state.camera_rotation *= glam::Quat::from_euler(glam::EulerRot::XYZ, imgui.io().MouseDelta.y * 0.01, imgui.io().MouseDelta.x * 0.01, 0.0);
+					let right_vec = ui_state.camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
 					let flat_right_vec = Vec3{x: right_vec.x, y: 0.0, z: right_vec.z}.normalize();
-					*camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * *camera_rotation;
+					ui_state.camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * ui_state.camera_rotation;
 					
 					
+				}
+				
+				if imgui.io().MouseDown[2] {
+					
+					let right_delta = -imgui.io().MouseDelta.x * (ui_state.camera_rotation * Vec3::X) * 0.001 * ui_state.camera_zoom;
+					let up_delta = imgui.io().MouseDelta.y * (ui_state.camera_rotation * Vec3::Y) * 0.001 * ui_state.camera_zoom;
+					ui_state.pivot_centre = ui_state.pivot_centre + right_delta + up_delta;
 				}
 				
 			}
@@ -237,76 +281,93 @@ impl Scene3D {
 }
 
 pub trait DrawSceneGizmo {
-	fn draw_scene_gizmo(&mut self, scene: &mut Scene3D);
+	type GizmoState: Default;
+	fn draw_scene_gizmo(&mut self, gizmo_state: &mut Self::GizmoState, scene: &mut Scene3D);
 }
 
 
 
-pub struct SceneImguiState {
-	pub has_focus: bool,
+pub struct SceneInspectState {
+	has_focus: bool,
 	pub vertical_fov: f32,
 	pub pivot_centre: glam::Vec3,
 	pub camera_rotation: glam::Quat,
 	pub camera_zoom: f32,
 }
 
-impl Default for SceneImguiState {
+impl Default for SceneInspectState {
 	fn default() -> Self {
-		
 		
 		let mut camera_rotation = glam::Quat::from_rotation_arc(glam::Vec3::Z, glam::Vec3{x: 0.5, y: -0.2, z: 0.5}.normalize());
 		let right_vec = camera_rotation.mul_vec3(Vec3{x: 1.0, y: 0.0, z: 0.0});
 		let flat_right_vec = Vec3{x: right_vec.x, y: 0.0, z: right_vec.z}.normalize();
 		camera_rotation = glam::Quat::from_rotation_arc(right_vec, flat_right_vec) * camera_rotation;
 		
-		SceneImguiState {
+		SceneInspectState {
 			has_focus: false,
 			vertical_fov: 45.0,
 			pivot_centre: glam::Vec3::ZERO,
-			camera_rotation: camera_rotation,
+			camera_rotation,
 			camera_zoom: 20.0,
 		}
 	}
 }
 
-
-
-impl ui::ImguiInspect for Scene3D {
+impl Saveable for SceneInspectState {
 	
-	type ImguiState = SceneImguiState;
-	
-	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
+	fn to_json(&self) -> json::JsonValue {
 		
-		//imgui.table_config("Test table".into(), 2).with(|| {
-			
-			//imgui.table_next_row(easy_imgui::TableRowFlags::None, 0.0);
-			//imgui.table_next_column();
-			
-			//let avail = imgui.get_content_region_avail();
-			
-			
-			//imgui.set_next_item_width(avail.x);
-			//imgui.text("Hi from column 1");
-			
-			//imgui.table_next_column();
-			
-			
-			
-			//imgui.list_box("###Trackers".into(), self.trackers.len() as i32, 0..self.trackers.len(), |i| format!("Tracker #{i}"), &mut ui_state.tracker_index_selected);
-			//imgui.combo("###Trackers".into(), 0..self.trackers.len(), |i| format!("Tracker #{i}"), &mut ui_state.tracker_index_selected);
-			
-			
-			self.imgui_draw_scene_only(gl, imgui, &mut ui_state.has_focus, ui_state.vertical_fov, ui_state.pivot_centre, &mut ui_state.camera_rotation, &mut ui_state.camera_zoom);
-			
-			
-			//imgui.table_next_column();
-			
-		//});
+		let mut json_obj = JsonValue::new_object();
+		json_obj["vertical fov"] = self.vertical_fov.into();
+		json_obj["pivot centre"] = self.pivot_centre.to_json();
+		json_obj["camera rotation"] = self.camera_rotation.to_json();
+		json_obj["camera zoom"] = self.camera_zoom.into();
+		json_obj
+		
+	}
+	
+	fn from_json(json_value: &JsonValue) -> Result<Self, DecodeJsonError> {
+		
+		let Some(vertical_fov) = json_value["vertical fov"].as_f32() else {return Err(DecodeJsonError::ParameterNotFound {json_searched: json_value.clone(), parameter_name: "vertical fov".into() }); };
+		let pivot_centre = Vec3::from_json(&json_value["pivot centre"])?;
+		let camera_rotation = Quat::from_json(&json_value["camera rotation"])?;
+		let Some(camera_zoom) = json_value["camera zoom"].as_f32() else {return Err(DecodeJsonError::ParameterNotFound {json_searched: json_value.clone(), parameter_name: "camera zoom".into() }); };
+		
+		Ok(Self {
+			has_focus: false,
+			vertical_fov,
+			pivot_centre,
+			camera_rotation,
+			camera_zoom,
+		})
 		
 		
 	}
 	
+	fn from_json_or_default(json_value: &JsonValue) -> Self {
+		let vertical_fov = json_value["vertical fov"].as_f32().unwrap_or(45.0);
+		let pivot_centre = Vec3::from_json_or_default(&json_value["pivot centre"]);
+		let camera_rotation = Quat::from_json_or_default(&json_value["camera rotation"]);
+		let camera_zoom = json_value["camera zoom"].as_f32().unwrap_or(20.0);
+		
+		Self {
+			has_focus: false,
+			vertical_fov,
+			pivot_centre,
+			camera_rotation,
+			camera_zoom,
+		}
+	}
 }
 
 
+impl ui::ImguiInspect for Scene3D {
+	
+	type ImguiState = SceneInspectState;
+	
+	fn draw_imgui_inspector(&mut self, ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>) {
+		self.imgui_draw_scene_only(ui_state, imgui);
+	}
+	
+}
 

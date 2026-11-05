@@ -1,7 +1,9 @@
 use glam;
-use crate::ui;
+use crate::{file::DecodeJsonError, ui};
 use easy_imgui as imgui;
-use std::rc::Rc;
+
+use crate::file;
+use json::{self, JsonValue};
 
 pub struct PixelTracker {
 	
@@ -16,7 +18,6 @@ impl PixelTracker {
 		
 		let centre = imgui::vec2(top_left.x + (bottom_right.x - top_left.x) * self.uv_position.x, top_left.y + (bottom_right.y - top_left.y) * self.uv_position.y);
 		
-		//imgui.window_draw_list().add_line(top_left, bottom_right, imgui::Color{r: 1.0, g: 0.0, b: 0.0, a: 1.0}, 1.0);
 		let cross_size = 5.0;
 		let border = 2.5;
 		let thickness = 2.5;
@@ -35,7 +36,7 @@ impl ui::ImguiInspect for PixelTracker {
 	
 	type ImguiState = ();
 	
-	fn draw_imgui_inspector(&mut self, ui_state_: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>, gl: Rc<glow::Context>) {
+	fn draw_imgui_inspector(&mut self, _ui_state: &mut Self::ImguiState, imgui: &imgui::Ui<crate::App>) {
 		
 		let mut pos_arr = self.uv_position.to_array();
 		imgui.drag_float_2_config("Position (UV)".into(), &mut pos_arr).speed(0.001).build();
@@ -47,3 +48,36 @@ impl ui::ImguiInspect for PixelTracker {
 	}
 	
 }
+
+impl file::Saveable for PixelTracker {
+	
+	fn to_json(&self) -> json::JsonValue {
+		
+		let mut tracker_json = json::JsonValue::new_object();
+		tracker_json["uv position"] = self.uv_position.to_json();
+		tracker_json["point index"] = self.point_index.into();
+		tracker_json
+		
+	}
+	
+	fn from_json(json_value: &JsonValue) -> Result<Self, DecodeJsonError> {
+		
+		let Some(point) = json_value["point index"].as_i32() else {return Err(DecodeJsonError::ParameterNotFound {json_searched: json_value.clone(), parameter_name: "point index".into() });};
+		
+		Ok(PixelTracker {
+			uv_position: glam::Vec2::from_json(&json_value["uv position"])?,
+			point_index: point,
+		})
+		
+	}
+	
+	fn from_json_or_default(json_value: &JsonValue) -> Self {
+		let point = json_value["point index"].as_i32().unwrap_or(0);
+		
+		PixelTracker {
+			uv_position: glam::Vec2::from_json_or_default(&json_value["uv position"]),
+			point_index: point,
+		}
+	}
+}
+

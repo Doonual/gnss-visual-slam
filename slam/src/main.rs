@@ -14,10 +14,19 @@ use x11rb::protocol::xproto::{ClipOrdering, Rectangle};
 use x11rb::rust_connection::RustConnection;
 use easy_imgui::WindowFlags;
 use std::rc::Rc;
+use std::fs;
 
 mod slam;
 mod ui;
+mod scene;
+mod file;
 
+use std::cell::OnceCell;
+
+use file::Saveable;
+
+use crate::slam::SlamState;
+use crate::ui::UiRoot;
 
 
 // extra pixels around each region, so resize handles and splitters stay grabbable
@@ -34,9 +43,8 @@ fn main() {
 	let mut handler = Handler {
 		window: None,
 		app: App {
-			gl: None,
-			slam_state: None,
-			ui: None,
+			show_demo: false,
+			ui_state: None,
 			rects: Vec::new(),
 		},
 		conn,
@@ -76,7 +84,7 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 		if w.IsExplicitChild {
 			continue;
 		}
-		if flags & (WindowFlags::NoMouseInputs.bits() as i32) != 0 {
+		if flags & WindowFlags::NoMouseInputs.bits() != 0 {
 			continue;
 		}
 		// the full-viewport window that hosts our dockspace must stay click-through
@@ -102,13 +110,31 @@ unsafe fn collect_input_rects() -> Vec<[f32; 4]> {
 }
 
 pub struct App {
-	gl: Option<Rc<glow::Context>>,
-	slam_state: Option<slam::SlamState>,
-	ui: Option<ui::Ui>,
+	show_demo: bool,
+	ui_state: Option<ui::UiRoot>,
 	rects: Vec<[f32; 4]>, // regions that accept input, refreshed every frame
 }
 
+
+thread_local! {
+    static GL: OnceCell<Rc<glow::Context>> = const { OnceCell::new() };
+}
+
+pub fn init_gl(ctx: Rc<glow::Context>) {
+    GL.with(|cell| {
+        cell.set(ctx).expect("GL already initialised");
+    });
+}
+
+pub fn gl() -> Rc<glow::Context> {
+    GL.with(|cell| cell.get().expect("GL not initialised").clone())
+}
+
+
+
+
 impl imgui::UiBuilder for App {
+	
 	fn do_ui(&mut self, imgui: &imgui::Ui<Self>) {
 		
 		// For docking to edges of monitor
@@ -119,17 +145,35 @@ impl imgui::UiBuilder for App {
 			//None,
 		//);
 		
-		if let Some(ui) = &mut self.ui {
-			if let Some(gl) = self.gl.clone() {
-				if let Some(slam_state) = &mut self.slam_state {
-					ui.render(gl, imgui, slam_state);
-				}
+		imgui.window_config("File".into()).with(|| {
+			
+			imgui.checkbox("Show demo".into(), &mut self.show_demo);
+			if self.show_demo {
+				imgui.show_demo_window(Some(&mut self.show_demo));
 			}
+			
+			if imgui.button("New".into()) {
+				self.ui_state = Some(UiRoot::default());
+			}
+			if imgui.button("Save".into()) && let Some(ui_root) = &self.ui_state
+			&& let Err(e) = fs::write("slam.json", ui_root.to_json().pretty(4)) {
+				eprintln!("Failed to save file: {e}");
+			}
+			if imgui.button("Load".into())
+			&& let Ok(slam_save_contents) = fs::read_to_string("slam.json")
+			&& let Ok(parsed_json) = json::parse(slam_save_contents.as_str()) {
+				self.ui_state = Some(UiRoot::from_json_or_default(&parsed_json));
+			}
+		});
+		
+		if let Some(ui) = &mut self.ui_state {
+			ui.render(imgui);
 		}
 		
 		// last, so every window of this frame has been submitted
 		self.rects = unsafe { collect_input_rects() };
 	}
+	
 }
 
 struct Handler {
@@ -140,6 +184,7 @@ struct Handler {
 }
 
 impl ApplicationHandler for Handler {
+	
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		let attrs = Window::default_attributes()
 		.with_title("SLAM Viewer")
@@ -170,15 +215,19 @@ impl ApplicationHandler for Handler {
 		
 		window.renderer().set_background_color(Some(Color::TRANSPARENT));
 		window.imgui().io_mut().enable_docking(true);
-		self.app.gl = Some(window.renderer().gl_context().clone());
-		self.app.slam_state = Some(slam::SlamState::init(window.renderer().gl_context().clone()));
-		self.app.ui = Some(ui::Ui::new(window.renderer().gl_context().clone()));
+		
+		init_gl(window.renderer().gl_context().clone());
+		
+		self.app.ui_state = Some(ui::UiRoot::default());
+		if let Ok(save_string) = fs::read_to_string("slam.json") && let Ok(save_json) = json::parse(save_string.as_str()) {
+			self.app.ui_state = Some(UiRoot::from_json_or_default(&save_json));
+		} else {
+			println!("Failed to load slam.json");
+		};
+		
+		
+		//self.app.slam_state = None;
 		self.window = Some(window);
-		
-		
-		
-		
-		
 		
 		
 	}
@@ -212,20 +261,18 @@ impl ApplicationHandler for Handler {
 		key.sort();
 		key.dedup();
 		
-		if key != self.applied {
-			if let Some(xid) = x11_window_id(w) {
-				let rects: Vec<Rectangle> = key.iter().map(|k| Rectangle {
-					x: k[0] as i16,
-					y: k[1] as i16,
-					width: k[2] as u16,
-					height: k[3] as u16,
-				}).collect();
-				let _ = self.conn.shape_rectangles(
-					shape::SO::SET, shape::SK::INPUT, ClipOrdering::UNSORTED, xid, 0, 0, &rects,
-				);
-				let _ = self.conn.flush();
-				self.applied = key;
-			}
+		if key != self.applied && let Some(xid) = x11_window_id(w) {
+			let rects: Vec<Rectangle> = key.iter().map(|k| Rectangle {
+				x: k[0] as i16,
+				y: k[1] as i16,
+				width: k[2] as u16,
+				height: k[3] as u16,
+			}).collect();
+			let _ = self.conn.shape_rectangles(
+				shape::SO::SET, shape::SK::INPUT, ClipOrdering::UNSORTED, xid, 0, 0, &rects,
+			);
+			let _ = self.conn.flush();
+			self.applied = key;
 		}
 	}
 	
@@ -240,4 +287,6 @@ impl ApplicationHandler for Handler {
 			window.about_to_wait();
 		}
 	}
+	
 }
+
